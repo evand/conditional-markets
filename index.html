@@ -56,9 +56,9 @@
                     <div class="cell col-header" id="col-header-b">B</div>
                     <div class="cell col-header" id="col-header-not-b">~B</div>
                     <div class="cell marginal-header">P(Row)</div>
-                    <div class="cell cond-header">A|?</div>
+                    <div class="cell cond-header">B|?</div>
 
-                    <!-- Row 1: A row with conditionals on right -->
+                    <!-- Row 1: A row - right edge shows P(B|A) -->
                     <div class="cell row-header" id="row-header-a">A</div>
                     <div class="cell joint clickable" id="cell-a-b" data-cell="a_yes_b_yes">
                         <span class="prob-value"></span>
@@ -69,12 +69,12 @@
                     <div class="cell marginal clickable" id="marginal-a" data-marginal="a">
                         <span class="prob-value"></span>
                     </div>
-                    <div class="cell conditional clickable" data-cond="a_given_b">
-                        <span class="cond-label">A|B</span>
-                        <span class="cond-value" id="cond-a-given-b">--</span>
+                    <div class="cell conditional clickable" data-cond="b_given_a">
+                        <span class="cond-label">B|A</span>
+                        <span class="cond-value" id="cond-b-given-a">--</span>
                     </div>
 
-                    <!-- Row 2: ~A row -->
+                    <!-- Row 2: ~A row - right edge shows P(B|~A) -->
                     <div class="cell row-header" id="row-header-not-a">~A</div>
                     <div class="cell joint clickable" id="cell-not-a-b" data-cell="a_no_b_yes">
                         <span class="prob-value"></span>
@@ -85,9 +85,9 @@
                     <div class="cell marginal clickable" id="marginal-not-a" data-marginal="not_a">
                         <span class="prob-value"></span>
                     </div>
-                    <div class="cell conditional clickable" data-cond="a_given_not_b">
-                        <span class="cond-label">A|~B</span>
-                        <span class="cond-value" id="cond-a-given-not-b">--</span>
+                    <div class="cell conditional clickable" data-cond="b_given_not_a">
+                        <span class="cond-label">B|~A</span>
+                        <span class="cond-value" id="cond-b-given-not-a">--</span>
                     </div>
 
                     <!-- Row 3: Column marginals -->
@@ -103,15 +103,15 @@
                     </div>
                     <div class="cell empty"></div>
 
-                    <!-- Row 4: Column conditionals B|? -->
-                    <div class="cell cond-header">B|?</div>
-                    <div class="cell conditional clickable" data-cond="b_given_a">
-                        <span class="cond-label">B|A</span>
-                        <span class="cond-value" id="cond-b-given-a">--</span>
+                    <!-- Row 4: Column conditionals - bottom shows P(A|B) -->
+                    <div class="cell cond-header">A|?</div>
+                    <div class="cell conditional clickable" data-cond="a_given_b">
+                        <span class="cond-label">A|B</span>
+                        <span class="cond-value" id="cond-a-given-b">--</span>
                     </div>
-                    <div class="cell conditional clickable" data-cond="b_given_not_a">
-                        <span class="cond-label">B|~A</span>
-                        <span class="cond-value" id="cond-b-given-not-a">--</span>
+                    <div class="cell conditional clickable" data-cond="a_given_not_b">
+                        <span class="cond-label">A|~B</span>
+                        <span class="cond-value" id="cond-a-given-not-b">--</span>
                     </div>
                     <div class="cell empty"></div>
                     <div class="cell empty"></div>
