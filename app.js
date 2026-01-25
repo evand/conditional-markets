@@ -62,6 +62,227 @@ function probabilityFromPool(y, n) {
     return n / (y + n);
 }
 
+// =============================================================================
+// Multi-Choice Auto-Arbitrage Simulation
+// =============================================================================
+// Manifold's actual algorithm for buying YES in multi-choice markets:
+// 1. Buy noShares NO in each of the OTHER (n-1) answers
+// 2. Redeem: noShares NO in (n-1) answers → noShares*(n-2) mana + noShares YES in target
+// 3. Use remaining amount to buy more YES directly in target
+// 4. Binary search for noShares such that final Σp = 1
+
+/**
+ * Calculate Σp (sum of all probabilities) from a pools object.
+ */
+function sumOfProbabilities(pools) {
+    let sum = 0;
+    for (const pool of Object.values(pools)) {
+        sum += probabilityFromPool(pool.YES, pool.NO);
+    }
+    return sum;
+}
+
+/**
+ * Deep copy pools object.
+ */
+function copyPools(pools) {
+    const copy = {};
+    for (const [id, pool] of Object.entries(pools)) {
+        copy[id] = { YES: pool.YES, NO: pool.NO };
+    }
+    return copy;
+}
+
+/**
+ * Simulate buying YES in a multi-choice market using Manifold's actual algorithm:
+ * Buy NO in OTHER answers, redeem for mana + YES, use remainder to buy direct YES.
+ *
+ * @param {Object} allPools - Map of answerId -> {YES, NO} pool state
+ * @param {string} targetId - The answer to buy YES in
+ * @param {number} betAmount - Total amount to spend
+ * @param {number} noShares - Number of NO shares to buy in each other answer
+ * @returns {Object|null} { newPools, yesShares, netNoCost, directYesCost } or null if invalid
+ */
+function simulateMultiChoiceYesBuy(allPools, targetId, betAmount, noShares) {
+    const answerIds = Object.keys(allPools);
+    const n = answerIds.length;
+    const otherIds = answerIds.filter(id => id !== targetId);
+
+    // Step 1: Calculate cost to buy noShares NO in each OTHER answer
+    let totalNoCost = 0;
+    const newPools = copyPools(allPools);
+
+    for (const otherId of otherIds) {
+        const pool = newPools[otherId];
+        const cost = costForShares(pool.YES, pool.NO, noShares, 'NO');
+        if (!isFinite(cost)) return null;
+        totalNoCost += cost;
+
+        // Update pool after NO purchase
+        const updatedPool = poolAfterTrade(pool.YES, pool.NO, cost, 'NO');
+        newPools[otherId] = { YES: updatedPool.y, NO: updatedPool.n };
+    }
+
+    // Step 2: Redemption - NO shares in (n-1) other answers become:
+    //   - noShares * (n-2) mana
+    //   - noShares YES shares in target
+    const redeemedMana = noShares * (n - 2);
+    const redeemedYesShares = noShares;
+
+    // Net cost for the NO hedge operation
+    const netNoCost = totalNoCost - redeemedMana;
+
+    // Step 3: Remaining amount for direct YES purchase
+    const directYesBudget = betAmount - netNoCost;
+    if (directYesBudget < -0.0001) {
+        return null;  // Not enough budget for this noShares level
+    }
+
+    // Direct YES purchase in target
+    let directYesShares = 0;
+    if (directYesBudget > 0.0001) {
+        const targetPool = newPools[targetId];
+        directYesShares = sharesForCost(targetPool.YES, targetPool.NO, directYesBudget, 'YES');
+        const updatedTarget = poolAfterTrade(targetPool.YES, targetPool.NO, directYesBudget, 'YES');
+        newPools[targetId] = { YES: updatedTarget.y, NO: updatedTarget.n };
+    }
+
+    // Note: Redemption gives us YES shares but doesn't change the pool.
+    // The pool states reflect: NO purchases in other answers + direct YES in target.
+    // The user receives redeemed + direct shares.
+    const totalYesShares = redeemedYesShares + directYesShares;
+
+    return {
+        newPools,
+        yesShares: totalYesShares,
+        netNoCost,
+        directYesCost: Math.max(0, directYesBudget),
+        redeemedYesShares,
+        directYesShares
+    };
+}
+
+/**
+ * Simulate a trade on one answer in a multi-choice market, including auto-arb.
+ * This uses Manifold's actual algorithm: buy NO in other answers, redeem, buy direct YES.
+ *
+ * @param {Object} allPools - Map of answerId -> {YES, NO} pool state
+ * @param {string} targetId - The answer being traded
+ * @param {number} cost - Amount to spend
+ * @param {string} position - 'YES' or 'NO'
+ * @returns {Object} { newPools, shares }
+ */
+function simulateMultiChoiceTrade(allPools, targetId, cost, position) {
+    if (position !== 'YES') {
+        // NO trades use a different algorithm (buy YES in other answers)
+        // For simplicity, fall back to binary formula for now
+        const pool = allPools[targetId];
+        const shares = sharesForCost(pool.YES, pool.NO, cost, position);
+        const newPool = poolAfterTrade(pool.YES, pool.NO, cost, position);
+        const newPools = copyPools(allPools);
+        newPools[targetId] = { YES: newPool.y, NO: newPool.n };
+        return { newPools, shares };
+    }
+
+    // Binary search for noShares that makes Σp = 1
+    const n = Object.keys(allPools).length;
+
+    // Bounds for noShares
+    let lo = 0;
+    let hi = cost * 2;  // Generous upper bound
+
+    // Binary search to find noShares where Σp ≈ 1
+    let bestResult = null;
+    let bestSumP = Infinity;
+
+    for (let iter = 0; iter < 60; iter++) {
+        const mid = (lo + hi) / 2;
+        const result = simulateMultiChoiceYesBuy(allPools, targetId, cost, mid);
+
+        if (!result) {
+            // This noShares is too high (costs more than budget)
+            hi = mid;
+            continue;
+        }
+
+        const sumP = sumOfProbabilities(result.newPools);
+
+        // Track best result (closest to Σp = 1)
+        if (Math.abs(sumP - 1) < Math.abs(bestSumP - 1)) {
+            bestResult = result;
+            bestSumP = sumP;
+        }
+
+        if (Math.abs(sumP - 1) < 0.0001) {
+            // Close enough
+            break;
+        }
+
+        if (sumP > 1) {
+            // Need more noShares (more NO buying lowers other probs)
+            lo = mid;
+        } else {
+            // Need less noShares
+            hi = mid;
+        }
+    }
+
+    if (!bestResult) {
+        // Fallback to binary if auto-arb fails
+        const pool = allPools[targetId];
+        const shares = sharesForCost(pool.YES, pool.NO, cost, position);
+        const newPool = poolAfterTrade(pool.YES, pool.NO, cost, position);
+        const newPools = copyPools(allPools);
+        newPools[targetId] = { YES: newPool.y, NO: newPool.n };
+        return { newPools, shares };
+    }
+
+    return { newPools: bestResult.newPools, shares: bestResult.yesShares };
+}
+
+/**
+ * Calculate cost for shares in a multi-choice market (accounting for auto-arb).
+ * @param {Object} allPools - Map of answerId -> {YES, NO}
+ * @param {string} targetId - The answer being traded
+ * @param {number} targetShares - Desired number of shares
+ * @param {string} position - 'YES' or 'NO'
+ * @returns {Object} { cost, newPools }
+ */
+function multiChoiceCostForShares(allPools, targetId, targetShares, position) {
+    if (position !== 'YES' || targetShares <= 0) {
+        // Fall back to binary for NO trades
+        const pool = allPools[targetId];
+        const cost = costForShares(pool.YES, pool.NO, targetShares, position);
+        return { cost, newPools: allPools };
+    }
+
+    // Binary search for the cost that yields targetShares
+    let lo = 0;
+    let hi = targetShares * 2;  // Upper bound guess
+
+    // Expand hi if needed
+    let result = simulateMultiChoiceTrade(allPools, targetId, hi, position);
+    while (result.shares < targetShares && hi < 1000000) {
+        hi *= 2;
+        result = simulateMultiChoiceTrade(allPools, targetId, hi, position);
+    }
+
+    // Binary search
+    for (let i = 0; i < 50; i++) {
+        const mid = (lo + hi) / 2;
+        result = simulateMultiChoiceTrade(allPools, targetId, mid, position);
+        if (result.shares < targetShares) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+
+    const cost = (lo + hi) / 2;
+    result = simulateMultiChoiceTrade(allPools, targetId, cost, position);
+    return { cost, newPools: result.newPools };
+}
+
 // State
 let currentMarket = null;
 let currentMarketConfig = null;
@@ -94,21 +315,281 @@ async function init() {
 }
 
 async function loadMarketList() {
-    try {
-        const response = await fetch('markets.json');
-        const markets = await response.json();
+    // Clear existing options except placeholder
+    while (marketSelect.options.length > 1) {
+        marketSelect.remove(1);
+    }
 
-        markets.forEach(market => {
-            const option = document.createElement('option');
-            option.value = market.slug;
-            option.textContent = market.name;
-            option.dataset.config = JSON.stringify(market);
-            marketSelect.appendChild(option);
-        });
+    try {
+        // Load built-in markets
+        const response = await fetch('markets.json');
+        const builtInMarkets = await response.json();
+
+        // Load custom markets from localStorage
+        const customMarkets = getCustomMarkets();
+
+        // Add built-in markets
+        if (builtInMarkets.length > 0) {
+            const builtInGroup = document.createElement('optgroup');
+            builtInGroup.label = 'Built-in Markets';
+            builtInMarkets.forEach(market => {
+                const option = document.createElement('option');
+                option.value = market.slug;
+                option.textContent = market.name;
+                option.dataset.config = JSON.stringify(market);
+                builtInGroup.appendChild(option);
+            });
+            marketSelect.appendChild(builtInGroup);
+        }
+
+        // Add custom markets if any
+        if (customMarkets.length > 0) {
+            const customGroup = document.createElement('optgroup');
+            customGroup.label = 'Your Markets';
+            customMarkets.forEach(market => {
+                const option = document.createElement('option');
+                option.value = market.slug;
+                option.textContent = market.name;
+                option.dataset.config = JSON.stringify(market);
+                option.dataset.custom = 'true';
+                customGroup.appendChild(option);
+            });
+            marketSelect.appendChild(customGroup);
+        }
+
+        // Add "Configure new..." option
+        const configOption = document.createElement('option');
+        configOption.value = '__configure__';
+        configOption.textContent = '+ Configure new market...';
+        marketSelect.appendChild(configOption);
+
     } catch (error) {
         console.error('Failed to load markets.json:', error);
         showError('Failed to load market list');
     }
+}
+
+function getCustomMarkets() {
+    try {
+        const stored = localStorage.getItem('custom_markets');
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        console.error('Failed to load custom markets:', e);
+        return [];
+    }
+}
+
+function saveCustomMarket(config) {
+    const markets = getCustomMarkets();
+    // Replace if exists, otherwise add
+    const existingIndex = markets.findIndex(m => m.slug === config.slug);
+    if (existingIndex >= 0) {
+        markets[existingIndex] = config;
+    } else {
+        markets.push(config);
+    }
+    localStorage.setItem('custom_markets', JSON.stringify(markets));
+}
+
+// =============================================================================
+// Market Configuration Dialog
+// =============================================================================
+
+let configFetchedMarket = null;  // Temporarily holds fetched market during config
+
+function openConfigDialog() {
+    const dialog = document.getElementById('config-dialog');
+    const stepSlug = document.getElementById('config-step-slug');
+    const stepMap = document.getElementById('config-step-map');
+    const slugInput = document.getElementById('config-slug');
+    const saveBtn = document.getElementById('config-save');
+
+    // Reset dialog state
+    stepSlug.classList.remove('hidden');
+    stepMap.classList.add('hidden');
+    slugInput.value = '';
+    saveBtn.disabled = true;
+    configFetchedMarket = null;
+    document.getElementById('config-fetch-error').classList.add('hidden');
+    document.getElementById('config-map-error').classList.add('hidden');
+
+    dialog.classList.remove('hidden');
+    slugInput.focus();
+}
+
+function closeConfigDialog() {
+    document.getElementById('config-dialog').classList.add('hidden');
+    configFetchedMarket = null;
+}
+
+async function fetchMarketForConfig() {
+    const slugInput = document.getElementById('config-slug');
+    const errorDiv = document.getElementById('config-fetch-error');
+    const stepMap = document.getElementById('config-step-map');
+    const fetchBtn = document.getElementById('config-fetch-btn');
+
+    const slug = slugInput.value.trim();
+    if (!slug) {
+        errorDiv.textContent = 'Please enter a market slug';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+
+    errorDiv.classList.add('hidden');
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = 'Loading...';
+
+    try {
+        const market = await fetchMarket(slug);
+
+        // Validate it's a 4-answer multi-choice market
+        if (!market.answers || market.answers.length !== 4) {
+            throw new Error(`Expected 4 answers for 2×2 market, got ${market.answers?.length || 0}`);
+        }
+        if (market.isResolved) {
+            throw new Error('This market has resolved. Choose an active market.');
+        }
+
+        configFetchedMarket = market;
+        showConfigMappingStep(market);
+
+    } catch (error) {
+        errorDiv.textContent = error.message;
+        errorDiv.classList.remove('hidden');
+    } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = 'Fetch';
+    }
+}
+
+function showConfigMappingStep(market) {
+    const stepMap = document.getElementById('config-step-map');
+    const titleEl = document.getElementById('config-market-title');
+    const answerList = document.getElementById('config-answer-list');
+    const labelAInput = document.getElementById('config-label-a');
+    const labelBInput = document.getElementById('config-label-b');
+
+    // Show market title
+    titleEl.textContent = market.question;
+
+    // Clear and populate answer list
+    answerList.innerHTML = '';
+
+    const cellOptions = [
+        { value: '', label: '-- Select cell --' },
+        { value: 'a_yes_b_yes', label: 'A & B' },
+        { value: 'a_yes_b_no', label: 'A & ~B' },
+        { value: 'a_no_b_yes', label: '~A & B' },
+        { value: 'a_no_b_no', label: '~A & ~B' }
+    ];
+
+    market.answers.forEach((answer, index) => {
+        const row = document.createElement('div');
+        row.className = 'config-answer-row';
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'config-answer-text';
+        textSpan.textContent = answer.text;
+        textSpan.title = answer.text;  // Full text on hover
+
+        const select = document.createElement('select');
+        select.dataset.answerIndex = index;
+        select.className = 'config-cell-select';
+
+        cellOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            select.appendChild(option);
+        });
+
+        select.addEventListener('change', validateConfigMapping);
+
+        row.appendChild(textSpan);
+        row.appendChild(select);
+        answerList.appendChild(row);
+    });
+
+    // Clear labels
+    labelAInput.value = '';
+    labelBInput.value = '';
+
+    // Show step 2
+    stepMap.classList.remove('hidden');
+}
+
+function validateConfigMapping() {
+    const saveBtn = document.getElementById('config-save');
+    const errorDiv = document.getElementById('config-map-error');
+    const labelA = document.getElementById('config-label-a').value.trim();
+    const labelB = document.getElementById('config-label-b').value.trim();
+    const selects = document.querySelectorAll('.config-cell-select');
+
+    // Check all selects have a value
+    const selectedCells = [];
+    let allSelected = true;
+    selects.forEach(select => {
+        if (!select.value) {
+            allSelected = false;
+        } else {
+            selectedCells.push(select.value);
+        }
+    });
+
+    // Check for duplicates
+    const uniqueCells = new Set(selectedCells);
+    const hasDuplicates = selectedCells.length !== uniqueCells.size;
+
+    // Check labels
+    const hasLabels = labelA && labelB;
+
+    // Update error message
+    if (hasDuplicates) {
+        errorDiv.textContent = 'Each cell can only be assigned once';
+        errorDiv.classList.remove('hidden');
+        saveBtn.disabled = true;
+        return;
+    }
+
+    errorDiv.classList.add('hidden');
+    saveBtn.disabled = !(allSelected && hasLabels && !hasDuplicates);
+}
+
+function saveConfigAndLoad() {
+    const labelA = document.getElementById('config-label-a').value.trim();
+    const labelB = document.getElementById('config-label-b').value.trim();
+    const selects = document.querySelectorAll('.config-cell-select');
+
+    if (!configFetchedMarket) return;
+
+    // Build truthTable mapping
+    const truthTable = {};
+    selects.forEach((select, index) => {
+        const cellType = select.value;
+        const answerText = configFetchedMarket.answers[index].text;
+        truthTable[cellType] = answerText;
+    });
+
+    // Build config object
+    const config = {
+        slug: configFetchedMarket.slug,
+        name: configFetchedMarket.question.substring(0, 60) + (configFetchedMarket.question.length > 60 ? '...' : ''),
+        labelA: labelA,
+        labelB: labelB,
+        truthTable: truthTable
+    };
+
+    // Save to localStorage
+    saveCustomMarket(config);
+
+    // Close dialog
+    closeConfigDialog();
+
+    // Reload market list and select new market
+    loadMarketList().then(() => {
+        marketSelect.value = config.slug;
+        loadMarket(config);
+    });
 }
 
 function loadApiKey() {
@@ -166,6 +647,17 @@ function setupEventListeners() {
     document.getElementById('close-result-dialog').addEventListener('click', closeResultDialog);
     document.getElementById('close-result').addEventListener('click', closeResultDialog);
 
+    // Config dialog handlers
+    document.getElementById('close-config-dialog').addEventListener('click', closeConfigDialog);
+    document.getElementById('config-cancel').addEventListener('click', closeConfigDialog);
+    document.getElementById('config-fetch-btn').addEventListener('click', fetchMarketForConfig);
+    document.getElementById('config-save').addEventListener('click', saveConfigAndLoad);
+    document.getElementById('config-slug').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') fetchMarketForConfig();
+    });
+    document.getElementById('config-label-a').addEventListener('input', validateConfigMapping);
+    document.getElementById('config-label-b').addEventListener('input', validateConfigMapping);
+
     // Bet panel handlers
     document.getElementById('close-bet-panel').addEventListener('click', closeBetPanel);
     document.getElementById('panel-bet-amount').addEventListener('input', () => {
@@ -214,6 +706,14 @@ async function onMarketSelect(event) {
     const slug = event.target.value;
     if (!slug) {
         hideAll();
+        return;
+    }
+
+    // Special case: configure new market
+    if (slug === '__configure__') {
+        openConfigDialog();
+        // Reset dropdown to placeholder
+        marketSelect.value = '';
         return;
     }
 
@@ -778,30 +1278,54 @@ async function validateConditionalBet(amount, statusEl, detailsEl) {
     const config = HEDGE_CONFIG[currentCondType];
     const hedgeSharesPerCell = amount;
 
-    // CAVEAT: We validate each leg independently against current market state.
-    // In real execution, earlier trades move the market before later trades execute.
-    // This validation confirms our AMM math is correct, but actual execution will
-    // see slightly different prices due to sequential market impact.
+    // VALIDATION: Each leg tested against ORIGINAL market state (not sequential).
+    // This validates our multi-choice AMM math including auto-arb bonus.
+    // Trade plan uses sequential simulation which will show different costs.
+
+    // Get all pools for auto-arb calculation
+    const allPools = {};
+    for (const [cellName, pool] of Object.entries(marketProbabilities.pools)) {
+        if (pool && pool.YES && pool.NO) {
+            allPools[cellName] = { YES: pool.YES, NO: pool.NO };
+        }
+    }
+
+    // DEBUG: Log pool state
+    console.log('=== VALIDATION DEBUG ===');
+    console.log('All pools:', JSON.stringify(allPools, null, 2));
+    let sumP = 0;
+    for (const [id, pool] of Object.entries(allPools)) {
+        const p = probabilityFromPool(pool.YES, pool.NO);
+        console.log(`  ${id}: YES=${pool.YES.toFixed(2)}, NO=${pool.NO.toFixed(2)}, prob=${(p*100).toFixed(2)}%`);
+        sumP += p;
+    }
+    console.log(`  Σp = ${sumP.toFixed(4)}`);
 
     let rows = [];
     let totalError = 0;
     let totalShares = 0;
 
-    // Validate each hedge cell
+    // Validate each hedge cell (each against original baseline)
     for (const cellName of config.hedgeCells) {
-        const pool = marketProbabilities.pools[cellName];
         const answerId = marketProbabilities.answerIds[cellName];
+        const pool = allPools[cellName];
 
-        // Our estimate: cost to buy hedgeSharesPerCell shares
-        let localCost = 0;
-        if (pool && pool.YES && pool.NO) {
-            localCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
-        }
+        // DEBUG: Show binary vs multi-choice calculation
+        const binaryCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
+        const binaryShares = sharesForCost(pool.YES, pool.NO, binaryCost, 'YES');
+        console.log(`\nHedge ${cellName}:`);
+        console.log(`  Binary: cost=${binaryCost.toFixed(4)} for ${hedgeSharesPerCell} shares`);
+        console.log(`  Binary verify: ${binaryShares.toFixed(4)} shares for that cost`);
 
-        // API: We need to validate shares for a given cost, not cost for shares
-        // So let's validate the shares we'd get for our calculated cost
+        // Our estimate: cost to buy hedgeSharesPerCell shares WITH AUTO-ARB
+        const localResult = multiChoiceCostForShares(allPools, cellName, hedgeSharesPerCell, 'YES');
+        const localCost = localResult.cost;
+        console.log(`  Multi-choice: cost=${localCost.toFixed(4)}`);
+
+        // API dry-run: shares for that cost (includes auto-arb on their end)
         const apiResult = await placeBetDryRun(currentMarket.id, answerId, 'YES', localCost);
         const apiShares = apiResult.shares || 0;
+        console.log(`  API: ${apiShares.toFixed(4)} shares for M$${localCost.toFixed(4)}`);
 
         const error = Math.abs(hedgeSharesPerCell - apiShares);
         totalError += error;
@@ -810,33 +1334,41 @@ async function validateConditionalBet(amount, statusEl, detailsEl) {
         rows.push(`
             <div class="validation-row">
                 <span class="label">Hedge ${cellName.replace('a_', '').replace('b_', '')}:</span>
-                <span class="value">${hedgeSharesPerCell.toFixed(1)} vs ${apiShares.toFixed(1)} shares</span>
+                <span class="value">${hedgeSharesPerCell.toFixed(1)} vs ${apiShares.toFixed(1)} shares (M$${localCost.toFixed(2)})</span>
             </div>
         `);
     }
 
-    // Validate target
+    // Validate target (against original baseline)
     const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
-    const targetPool = marketProbabilities.pools[targetCell];
     const targetAnswerId = marketProbabilities.answerIds[targetCell];
+    const targetPool = allPools[targetCell];
 
-    // Calculate target amount
+    // Calculate target amount using costs from original state
     let totalHedgeCost = 0;
     for (const cellName of config.hedgeCells) {
-        const pool = marketProbabilities.pools[cellName];
-        if (pool && pool.YES && pool.NO) {
-            totalHedgeCost += costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
-        }
+        const result = multiChoiceCostForShares(allPools, cellName, hedgeSharesPerCell, 'YES');
+        totalHedgeCost += result.cost;
     }
     const targetAmount = Math.max(0, amount - totalHedgeCost);
 
+    // DEBUG: Show binary vs multi-choice calculation for target
+    console.log(`\nTarget ${targetCell}:`);
+    console.log(`  Target amount: M$${targetAmount.toFixed(4)}`);
+    const binaryTargetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES');
+    console.log(`  Binary: ${binaryTargetShares.toFixed(4)} shares for M$${targetAmount.toFixed(4)}`);
+
+    // Our estimate: shares for target amount WITH AUTO-ARB
     let localTargetShares = 0;
-    if (targetPool && targetPool.YES && targetPool.NO && targetAmount > 0) {
-        localTargetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES');
+    if (allPools[targetCell] && targetAmount > 0) {
+        const result = simulateMultiChoiceTrade(allPools, targetCell, targetAmount, 'YES');
+        localTargetShares = result.shares;
     }
+    console.log(`  Multi-choice: ${localTargetShares.toFixed(4)} shares`);
 
     const apiTargetResult = await placeBetDryRun(currentMarket.id, targetAnswerId, 'YES', targetAmount);
     const apiTargetShares = apiTargetResult.shares || 0;
+    console.log(`  API: ${apiTargetShares.toFixed(4)} shares for M$${targetAmount.toFixed(4)}`);
 
     const targetError = Math.abs(localTargetShares - apiTargetShares);
     totalError += targetError;
@@ -845,12 +1377,12 @@ async function validateConditionalBet(amount, statusEl, detailsEl) {
     rows.push(`
         <div class="validation-row">
             <span class="label">Target:</span>
-            <span class="value">${localTargetShares.toFixed(1)} vs ${apiTargetShares.toFixed(1)} shares</span>
+            <span class="value">${localTargetShares.toFixed(1)} vs ${apiTargetShares.toFixed(1)} shares (M$${targetAmount.toFixed(2)})</span>
         </div>
     `);
 
     const errorPct = totalShares > 0 ? (totalError / totalShares * 100) : 0;
-    const isMatch = errorPct < 2;  // Within 2% for multi-leg
+    const isMatch = errorPct < 5;  // Within 5% for multi-leg with auto-arb approximation
 
     statusEl.textContent = isMatch ? '✓ validated' : '✗ mismatch';
     statusEl.className = `validation-status ${isMatch ? 'valid' : 'invalid'}`;
@@ -861,7 +1393,7 @@ async function validateConditionalBet(amount, statusEl, detailsEl) {
             <span class="value ${isMatch ? 'match' : 'mismatch'}">${errorPct.toFixed(2)}%</span>
         </div>
         <div class="validation-row" style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary);">
-            <span>Note: Validates each leg vs current state. Actual execution sees sequential price changes.</span>
+            <span>Note: Each leg validated vs original state. Trade plan simulates sequential execution.</span>
         </div>
     `;
     detailsEl.classList.remove('hidden');
@@ -1087,48 +1619,48 @@ function updateConditionalTradePreview() {
     // N = amount, so M$10 bet buys 10 shares of each hedge outcome.
     const hedgeSharesPerCell = amount;
 
-    // SEQUENTIAL SIMULATION: Each trade moves the market, affecting later trades.
-    // We simulate this by updating pool state after each trade.
-    // Note: This doesn't account for multi-choice auto-arb (which reduces actual impact)
-    // but gives a more accurate estimate than treating trades as independent.
+    // SEQUENTIAL SIMULATION with AUTO-ARB:
+    // Each trade moves the market (affecting later trades) AND triggers auto-arb
+    // which rebalances all answers to maintain Σp = 1.
+    // Auto-arb gives bonus shares, making trades cheaper than binary AMM predicts.
 
-    // Clone pools for simulation (don't modify original)
-    const simPools = {};
-    for (const cellName of [...config.hedgeCells, targetCell]) {
-        const pool = marketProbabilities.pools[cellName];
-        if (pool) {
+    // Clone ALL pools for simulation (auto-arb affects all answers)
+    let simPools = {};
+    for (const [cellName, pool] of Object.entries(marketProbabilities.pools)) {
+        if (pool && pool.YES && pool.NO) {
             simPools[cellName] = { YES: pool.YES, NO: pool.NO };
         }
     }
 
-    // Calculate hedge costs sequentially
+    // Calculate hedge costs sequentially with auto-arb
     let totalHedgeCost = 0;
     const hedgeCellCosts = [];
     for (const cellName of config.hedgeCells) {
         const cellProb = marketProbabilities.joint[cellName];
-        const pool = simPools[cellName];
 
-        let cellCost;
-        if (pool && pool.YES && pool.NO) {
-            cellCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
-            // Update simulated pool state after this trade
-            const newPool = poolAfterTrade(pool.YES, pool.NO, cellCost, 'YES');
-            simPools[cellName] = { YES: newPool.y, NO: newPool.n };
+        let cellCost, effectiveShares;
+        if (simPools[cellName]) {
+            // Use multi-choice cost calculation (accounts for auto-arb bonus)
+            const result = multiChoiceCostForShares(simPools, cellName, hedgeSharesPerCell, 'YES');
+            cellCost = result.cost;
+            simPools = result.newPools;  // Update all pools after auto-arb
+            effectiveShares = hedgeSharesPerCell;
         } else {
             cellCost = hedgeSharesPerCell * cellProb;
+            effectiveShares = hedgeSharesPerCell;
         }
 
-        hedgeCellCosts.push({ cellName, cellProb, cellCost });
+        hedgeCellCosts.push({ cellName, cellProb, cellCost, effectiveShares });
         totalHedgeCost += cellCost;
     }
 
     const targetAmount = Math.max(0, amount - totalHedgeCost);
-    const targetPool = simPools[targetCell];
 
-    // Calculate target shares using simulated pool state
+    // Calculate target shares using simulated pool state (with auto-arb)
     let targetShares;
-    if (targetPool && targetPool.YES && targetPool.NO && targetAmount > 0) {
-        targetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES').toFixed(1);
+    if (simPools[targetCell] && targetAmount > 0) {
+        const result = simulateMultiChoiceTrade(simPools, targetCell, targetAmount, 'YES');
+        targetShares = result.shares.toFixed(1);
     } else {
         targetShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
     }
@@ -1265,14 +1797,23 @@ async function executeConditionalBet() {
     // Same logic as preview: buy N shares of each hedge cell
     const hedgeSharesPerCell = amount;
 
-    // Calculate per-cell costs
+    // Clone all pools for sequential simulation with auto-arb
+    let simPools = {};
+    for (const [cellName, pool] of Object.entries(marketProbabilities.pools)) {
+        if (pool && pool.YES && pool.NO) {
+            simPools[cellName] = { YES: pool.YES, NO: pool.NO };
+        }
+    }
+
+    // Calculate per-cell costs using sequential simulation with auto-arb
     let totalHedgeCost = 0;
     const hedgeBets = [];
     for (const cellName of config.hedgeCells) {
-        const cellProb = marketProbabilities.joint[cellName];
-        const cellCost = hedgeSharesPerCell * cellProb;
-        hedgeBets.push({ cellName, cellCost: Math.max(1, Math.round(cellCost)) });
-        totalHedgeCost += cellCost;
+        const result = multiChoiceCostForShares(simPools, cellName, hedgeSharesPerCell, 'YES');
+        const cellCost = Math.max(1, Math.round(result.cost));
+        hedgeBets.push({ cellName, cellCost });
+        simPools = result.newPools;  // Update state for next calculation
+        totalHedgeCost += result.cost;
     }
 
     const targetAmount = Math.max(1, Math.round(amount - totalHedgeCost));

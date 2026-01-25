@@ -871,6 +871,93 @@ button:disabled {
     line-height: 1.8;
 }
 
+/* Configuration Dialog */
+.config-dialog {
+    max-width: 550px;
+}
+
+.config-step {
+    margin-bottom: 1rem;
+}
+
+.config-input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.config-input-row input {
+    flex: 1;
+}
+
+.config-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+}
+
+.config-error {
+    color: var(--error);
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.config-labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.config-label-input {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.config-label-input label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.config-answers {
+    margin-top: 1rem;
+}
+
+.config-answers p {
+    margin-bottom: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.config-answer-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.config-answer-text {
+    flex: 1;
+    font-size: 0.9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.config-answer-row select {
+    min-width: 120px;
+}
+
+#config-market-title {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: var(--text);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .container {

@@ -228,6 +228,57 @@
                 </div>
             </div>
         </div>
+
+        <!-- Market Configuration Dialog -->
+        <div id="config-dialog" class="dialog-overlay hidden">
+            <div class="dialog config-dialog">
+                <div class="dialog-header">
+                    <h3>Configure Market</h3>
+                    <button class="close-btn" id="close-config-dialog">&times;</button>
+                </div>
+                <div class="dialog-body">
+                    <!-- Step 1: Enter slug -->
+                    <div id="config-step-slug" class="config-step">
+                        <div class="config-input-row">
+                            <label for="config-slug">Market Slug:</label>
+                            <input type="text" id="config-slug" placeholder="e.g., will-trump-win-2024">
+                            <button id="config-fetch-btn" class="btn-primary">Fetch</button>
+                        </div>
+                        <p class="config-hint">Enter the slug from a Manifold market URL</p>
+                        <div id="config-fetch-error" class="config-error hidden"></div>
+                    </div>
+
+                    <!-- Step 2: Map answers (shown after fetch) -->
+                    <div id="config-step-map" class="config-step hidden">
+                        <h4 id="config-market-title"></h4>
+
+                        <div class="config-labels">
+                            <div class="config-label-input">
+                                <label for="config-label-a">Label A (rows):</label>
+                                <input type="text" id="config-label-a" placeholder="e.g., Trump wins">
+                            </div>
+                            <div class="config-label-input">
+                                <label for="config-label-b">Label B (columns):</label>
+                                <input type="text" id="config-label-b" placeholder="e.g., GOP Senate">
+                            </div>
+                        </div>
+
+                        <div class="config-answers">
+                            <p>Map each answer to a grid cell:</p>
+                            <div id="config-answer-list">
+                                <!-- Answer mapping rows inserted by JS -->
+                            </div>
+                        </div>
+
+                        <div id="config-map-error" class="config-error hidden"></div>
+                    </div>
+                </div>
+                <div class="dialog-footer">
+                    <button id="config-cancel" class="btn-secondary">Cancel</button>
+                    <button id="config-save" class="btn-primary" disabled>Save & Load</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
