@@ -1,5 +1,9 @@
 # Conditional Markets Viewer - TODO
 
+Items to do. Add freely, delete when done (move to Completed.md if it was significant).
+
+**Usage**: Keep it messy. One-liners are fine. Delete aggressively. If you're spending more than 30 seconds writing a TODO, you're overdoing it.
+
 ## Completed
 - [x] Project scaffolding
 - [x] Market data fetching from Manifold API
@@ -17,16 +21,20 @@
 - [x] Dark theme styling
 
 ## Next Up
-- [ ] AMM modeling for accurate cost/shares estimates
-      Current: shares ≈ amount/prob (ignores slippage)
-      Need: Proper CPMM math from manifold library
-- [ ] API dry-run validation
-      Verify our forecasts match Manifold's calculations
-      Use /v0/bet with dryRun=true parameter
+- [x] AMM modeling for accurate cost/shares estimates
+      Added: sharesForCost, costForShares using real CPMM math
+      Pool data (YES/NO) fetched from API for each answer
+- [x] API dry-run validation
+      "Validate" button compares local AMM to API dry-run
+      Shows per-leg comparison with error percentage
+      Caveat: Multi-leg validates independently (no sequential price impact)
+- [x] Sequential execution simulation in trade planning
+      Each hedge trade updates simulated pool state before next trade
+      Note: Doesn't account for multi-choice auto-arb
 - [ ] User-defined slugs
       Enter any market slug, manually map 4 outcomes to grid cells
-- [ ] Add more conditional markets to markets.json
-      Check verified_arbitrage.yaml for 2x2_joint patterns
+- [x] Add more conditional markets to markets.json
+      All 6 from verified_arbitrage.yaml added, all active
 
 ## Future
 - [ ] Position display (show current shares in each cell)
