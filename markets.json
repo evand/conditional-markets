@@ -70,5 +70,29 @@
       "a_no_b_yes": "Aella does not get new cavities; >= 10000 people get treatment",
       "a_no_b_no": "Aella does not get new cavities; < 10000 people get treatment"
     }
+  },
+  {
+    "name": "Drivechain / Bitcoin $100k",
+    "slug": "drivechain-bitcoin-prices-x-drivech",
+    "labelA": "Drivechain",
+    "labelB": "BTC > $100k",
+    "truthTable": {
+      "a_yes_b_yes": "Drivechain // > $100k",
+      "a_yes_b_no": "Drivechain // <= $100k",
+      "a_no_b_yes": "No Drivechain // > $100k",
+      "a_no_b_no": "No Drivechain // <= $100k"
+    }
+  },
+  {
+    "name": "Eurovision 2026 Winner",
+    "slug": "will-the-eurovision-2026-winner-be",
+    "labelA": "Public vote",
+    "labelB": "Jury vote",
+    "truthTable": {
+      "a_yes_b_yes": "The winner will have won both the public and the jury votes",
+      "a_yes_b_no": "The winner will have won only the public vote",
+      "a_no_b_yes": "The winner will have won only the jury vote",
+      "a_no_b_no": "The winner will have won neither the public nor the jury votes"
+    }
   }
 ]
