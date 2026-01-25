@@ -1020,3 +1020,23 @@ button:disabled {
     padding: 1px 4px;
     border-radius: 3px;
 }
+
+/* Minimum Bet Warnings */
+.trade-step.below-min {
+    border-left: 3px solid var(--warning);
+}
+
+.trade-step-amount.min-warning {
+    color: var(--warning);
+}
+
+.min-bet-warning {
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid var(--warning);
+    color: var(--warning);
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    text-align: center;
+}

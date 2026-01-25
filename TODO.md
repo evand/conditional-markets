@@ -5,7 +5,6 @@ Items to do. Add freely, delete when done (move to Completed.md if it was signif
 **Usage**: Keep it messy. One-liners are fine. Delete aggressively. If you're spending more than 30 seconds writing a TODO, you're overdoing it.
 
 ## Next Up
-- [ ] Position display (show current shares in each cell)
 - [ ] M$1 min bet constraint support
 - [ ] Deploy to Github Pages for alpha testing
 

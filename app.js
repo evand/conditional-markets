@@ -1784,34 +1784,56 @@ function updateConditionalTradePreview() {
     // Build trade plan HTML
     let stepNum = 1;
     let stepsHtml = '';
+    let hasMinBetWarning = false;
 
     // Hedge bets - each gets hedgeSharesPerCell shares
     for (const { cellName, cellProb, cellCost } of hedgeCellCosts) {
         const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
+        const isBelowMin = cellCost < 1;
+        if (isBelowMin) hasMinBetWarning = true;
+
         stepsHtml += `
-            <div class="trade-step hedge">
+            <div class="trade-step hedge${isBelowMin ? ' below-min' : ''}">
                 <span class="trade-step-num">${stepNum++}</span>
                 <div class="trade-step-details">
                     <div class="trade-step-action">Hedge: Buy YES → ${hedgeSharesPerCell} shares</div>
                     <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
                 </div>
-                <span class="trade-step-amount">M$${cellCost.toFixed(2)}</span>
+                <span class="trade-step-amount${isBelowMin ? ' min-warning' : ''}">M$${cellCost.toFixed(2)}${isBelowMin ? ' → M$1' : ''}</span>
             </div>
         `;
     }
 
     // Target bet
     const targetText = currentMarketConfig.truthTable?.[targetCell] || targetCell;
+    const targetBelowMin = targetAmount < 1;
+    if (targetBelowMin) hasMinBetWarning = true;
+
     stepsHtml += `
-        <div class="trade-step target">
+        <div class="trade-step target${targetBelowMin ? ' below-min' : ''}">
             <span class="trade-step-num">${stepNum}</span>
             <div class="trade-step-details">
                 <div class="trade-step-action">Target: Buy YES → ~${targetShares} shares</div>
                 <div class="trade-step-answer">${targetText} (${formatProb(targetProb)})</div>
             </div>
-            <span class="trade-step-amount">M$${targetAmount.toFixed(2)}</span>
+            <span class="trade-step-amount${targetBelowMin ? ' min-warning' : ''}">M$${targetAmount.toFixed(2)}${targetBelowMin ? ' → M$1' : ''}</span>
         </div>
     `;
+
+    // Add minimum bet warning if any leg is below M$1
+    if (hasMinBetWarning) {
+        // Calculate actual cost after rounding up
+        const actualHedgeCost = hedgeCellCosts.reduce((sum, h) => sum + Math.max(1, Math.round(h.cellCost)), 0);
+        const actualTargetCost = Math.max(1, Math.round(targetAmount));
+        const actualTotal = actualHedgeCost + actualTargetCost;
+
+        stepsHtml += `
+            <div class="min-bet-warning">
+                ⚠️ Some legs below M$1 minimum will be rounded up.<br>
+                Actual cost: M$${actualTotal} (requested: M$${amount})
+            </div>
+        `;
+    }
 
     document.getElementById('trade-plan').innerHTML = stepsHtml;
 
