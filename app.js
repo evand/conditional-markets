@@ -732,7 +732,6 @@ function updateConditionalTradePreview() {
     if (!config) return;
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
-    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
 
     // Get target based on direction
     const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
@@ -743,29 +742,39 @@ function updateConditionalTradePreview() {
     const desc = currentBetDirection === 'yes' ? config.descYes : config.descNo;
     document.getElementById('bet-panel-description').textContent = desc(currentMarketConfig);
 
-    // Split: hedgeAmount proportional to hedge cost, rest to target
-    const hedgeAmount = amount * hedgeCost;
-    const targetAmount = amount - hedgeAmount;
-    const perHedgeAmount = hedgeAmount / config.hedgeCells.length;
-    const estimatedShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
+    // KEY INSIGHT: Buy N shares of EACH hedge outcome (not equal dollars!)
+    // This ensures neutral payout if the hedged condition occurs.
+    // N = amount, so M$10 bet buys 10 shares of each hedge outcome.
+    const hedgeSharesPerCell = amount;
+
+    // Calculate hedge cost: N shares × prob for each cell
+    let totalHedgeCost = 0;
+    const hedgeCellCosts = [];
+    for (const cellName of config.hedgeCells) {
+        const cellProb = marketProbabilities.joint[cellName];
+        const cellCost = hedgeSharesPerCell * cellProb;
+        hedgeCellCosts.push({ cellName, cellProb, cellCost });
+        totalHedgeCost += cellCost;
+    }
+
+    const targetAmount = amount - totalHedgeCost;
+    const targetShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
 
     // Build trade plan HTML
     let stepNum = 1;
     let stepsHtml = '';
 
-    // Hedge bets
-    for (const cellName of config.hedgeCells) {
+    // Hedge bets - each gets hedgeSharesPerCell shares
+    for (const { cellName, cellProb, cellCost } of hedgeCellCosts) {
         const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
-        const cellProb = marketProbabilities.joint[cellName];
-        const hedgeShares = cellProb > 0 ? (perHedgeAmount / cellProb).toFixed(1) : '?';
         stepsHtml += `
             <div class="trade-step hedge">
                 <span class="trade-step-num">${stepNum++}</span>
                 <div class="trade-step-details">
-                    <div class="trade-step-action">Hedge: Buy YES → ~${hedgeShares} shares</div>
+                    <div class="trade-step-action">Hedge: Buy YES → ${hedgeSharesPerCell} shares</div>
                     <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
                 </div>
-                <span class="trade-step-amount">M$${perHedgeAmount.toFixed(2)}</span>
+                <span class="trade-step-amount">M$${cellCost.toFixed(2)}</span>
             </div>
         `;
     }
@@ -776,7 +785,7 @@ function updateConditionalTradePreview() {
         <div class="trade-step target">
             <span class="trade-step-num">${stepNum}</span>
             <div class="trade-step-details">
-                <div class="trade-step-action">Target: Buy YES → ~${estimatedShares} shares</div>
+                <div class="trade-step-action">Target: Buy YES → ~${targetShares} shares</div>
                 <div class="trade-step-answer">${targetText} (${formatProb(targetProb)})</div>
             </div>
             <span class="trade-step-amount">M$${targetAmount.toFixed(2)}</span>
@@ -787,18 +796,19 @@ function updateConditionalTradePreview() {
 
     // Summary
     const effectiveProb = currentBetDirection === 'yes' ? condProb : (1 - condProb);
+    const hedgeMarginal = marketProbabilities.marginals[config.hedgeMarginal];
     document.getElementById('trade-summary').innerHTML = `
         <div class="summary-row">
             <span class="summary-label">Conditional prob:</span>
             <span class="summary-value">${formatProb(effectiveProb)}</span>
         </div>
         <div class="summary-row">
-            <span class="summary-label">Hedge cost:</span>
-            <span class="summary-value">M$${hedgeAmount.toFixed(2)} (${formatProb(hedgeCost)})</span>
+            <span class="summary-label">Hedge (${hedgeSharesPerCell} shares × P(~cond)):</span>
+            <span class="summary-value">M$${totalHedgeCost.toFixed(2)}</span>
         </div>
         <div class="summary-row">
             <span class="summary-label">Target shares:</span>
-            <span class="summary-value">~${estimatedShares}</span>
+            <span class="summary-value">~${targetShares}</span>
         </div>
         <div class="summary-row total">
             <span class="summary-label">Total cost:</span>
@@ -823,9 +833,21 @@ async function executeConditionalBet() {
     if (!config) return;
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
-    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
-    const hedgeAmount = amount * hedgeCost;
-    const targetAmount = amount - hedgeAmount;
+
+    // Same logic as preview: buy N shares of each hedge cell
+    const hedgeSharesPerCell = amount;
+
+    // Calculate per-cell costs
+    let totalHedgeCost = 0;
+    const hedgeBets = [];
+    for (const cellName of config.hedgeCells) {
+        const cellProb = marketProbabilities.joint[cellName];
+        const cellCost = hedgeSharesPerCell * cellProb;
+        hedgeBets.push({ cellName, cellCost: Math.max(1, Math.round(cellCost)) });
+        totalHedgeCost += cellCost;
+    }
+
+    const targetAmount = Math.max(1, Math.round(amount - totalHedgeCost));
 
     // Get target based on direction
     const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
@@ -837,13 +859,12 @@ async function executeConditionalBet() {
     try {
         const results = [];
 
-        // Place hedge bets (split evenly between hedge cells)
-        const perHedgeAmount = Math.max(1, Math.round(hedgeAmount / config.hedgeCells.length));
-        for (const cellName of config.hedgeCells) {
+        // Place hedge bets (each gets hedgeSharesPerCell shares worth)
+        for (const { cellName, cellCost } of hedgeBets) {
             const answerId = marketProbabilities.answerIds[cellName];
             if (!answerId) throw new Error(`No answer ID for ${cellName}`);
 
-            const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', perHedgeAmount);
+            const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', cellCost);
             results.push({ type: 'hedge', cell: cellName, result });
         }
 
@@ -851,7 +872,7 @@ async function executeConditionalBet() {
         const targetAnswerId = marketProbabilities.answerIds[targetCell];
         if (!targetAnswerId) throw new Error(`No answer ID for target ${targetCell}`);
 
-        const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswerId, 'YES', Math.max(1, Math.round(targetAmount)));
+        const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswerId, 'YES', targetAmount);
         results.push({ type: 'target', cell: targetCell, result: targetResult });
 
         // Show success
