@@ -794,10 +794,65 @@ function updateConditionalTradePreview() {
 
     document.getElementById('trade-plan').innerHTML = stepsHtml;
 
+    // Build payout matrix - shows WIN/LOSE/NEUTRAL for each cell
+    const winCell = targetCell;
+    const loseCell = currentBetDirection === 'yes' ? config.targetNo : config.targetYes;
+    const hedgeSet = new Set(config.hedgeCells);
+
+    // Calculate payouts
+    const winPayout = parseFloat(targetShares) - amount;  // shares worth $targetShares, minus cost
+    const losePayout = -amount;
+    const neutralPayout = 0;  // hedge returns $amount
+
+    function cellPayout(cellName) {
+        if (cellName === winCell) return { label: 'WIN', value: winPayout, class: 'payout-win' };
+        if (cellName === loseCell) return { label: 'LOSE', value: losePayout, class: 'payout-lose' };
+        if (hedgeSet.has(cellName)) return { label: 'NEUTRAL', value: neutralPayout, class: 'payout-neutral' };
+        return { label: '?', value: 0, class: '' };
+    }
+
+    const payouts = {
+        a_yes_b_yes: cellPayout('a_yes_b_yes'),
+        a_yes_b_no: cellPayout('a_yes_b_no'),
+        a_no_b_yes: cellPayout('a_no_b_yes'),
+        a_no_b_no: cellPayout('a_no_b_no')
+    };
+
+    const formatPayout = (p) => p.value >= 0 ? `+$${p.value.toFixed(0)}` : `-$${Math.abs(p.value).toFixed(0)}`;
+
+    const payoutMatrixHtml = `
+        <div class="payout-matrix">
+            <div class="payout-header">Payouts if outcome occurs:</div>
+            <div class="payout-grid">
+                <div class="payout-corner"></div>
+                <div class="payout-col-header">${currentMarketConfig.labelB}</div>
+                <div class="payout-col-header">~${currentMarketConfig.labelB}</div>
+                <div class="payout-row-header">${currentMarketConfig.labelA}</div>
+                <div class="payout-cell ${payouts.a_yes_b_yes.class}">
+                    <span class="payout-label">${payouts.a_yes_b_yes.label}</span>
+                    <span class="payout-value">${formatPayout(payouts.a_yes_b_yes)}</span>
+                </div>
+                <div class="payout-cell ${payouts.a_yes_b_no.class}">
+                    <span class="payout-label">${payouts.a_yes_b_no.label}</span>
+                    <span class="payout-value">${formatPayout(payouts.a_yes_b_no)}</span>
+                </div>
+                <div class="payout-row-header">~${currentMarketConfig.labelA}</div>
+                <div class="payout-cell ${payouts.a_no_b_yes.class}">
+                    <span class="payout-label">${payouts.a_no_b_yes.label}</span>
+                    <span class="payout-value">${formatPayout(payouts.a_no_b_yes)}</span>
+                </div>
+                <div class="payout-cell ${payouts.a_no_b_no.class}">
+                    <span class="payout-label">${payouts.a_no_b_no.label}</span>
+                    <span class="payout-value">${formatPayout(payouts.a_no_b_no)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
     // Summary
     const effectiveProb = currentBetDirection === 'yes' ? condProb : (1 - condProb);
-    const hedgeMarginal = marketProbabilities.marginals[config.hedgeMarginal];
     document.getElementById('trade-summary').innerHTML = `
+        ${payoutMatrixHtml}
         <div class="summary-row">
             <span class="summary-label">Conditional prob:</span>
             <span class="summary-value">${formatProb(effectiveProb)}</span>

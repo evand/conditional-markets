@@ -516,6 +516,100 @@ button:disabled {
     font-weight: 600;
 }
 
+/* Payout Matrix */
+.payout-matrix {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.payout-header {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.payout-grid {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 2px;
+    font-size: 0.8rem;
+}
+
+.payout-corner {
+    background: transparent;
+}
+
+.payout-col-header,
+.payout-row-header {
+    background: var(--bg-secondary);
+    padding: 0.3rem 0.5rem;
+    text-align: center;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.payout-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem;
+    background: var(--bg-tertiary);
+    text-align: center;
+}
+
+.payout-label {
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.payout-value {
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.payout-win {
+    background: rgba(74, 222, 128, 0.15);
+    border: 1px solid var(--success);
+}
+
+.payout-win .payout-label {
+    color: var(--success);
+}
+
+.payout-win .payout-value {
+    color: var(--success);
+}
+
+.payout-lose {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid var(--error);
+}
+
+.payout-lose .payout-label {
+    color: var(--error);
+}
+
+.payout-lose .payout-value {
+    color: var(--error);
+}
+
+.payout-neutral {
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid var(--warning);
+}
+
+.payout-neutral .payout-label {
+    color: var(--warning);
+}
+
+.payout-neutral .payout-value {
+    color: var(--text-secondary);
+}
+
 /* Selected cell highlight */
 .cell.selected {
     outline: 3px solid var(--accent);
