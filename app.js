@@ -128,7 +128,7 @@ function setupEventListeners() {
     });
 
     // Conditional cell clicks for hedged betting
-    document.querySelectorAll('.conditional-cell').forEach(cell => {
+    document.querySelectorAll('.cell.conditional[data-cond]').forEach(cell => {
         cell.addEventListener('click', () => {
             const condType = cell.dataset.cond;
             if (condType) openConditionalBetPanel(condType, cell);
@@ -525,7 +525,7 @@ function openBetPanel(cellType, cellElement) {
 
 function closeBetPanel() {
     document.getElementById('bet-panel').classList.add('hidden');
-    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
     selectedCell = null;
     selectedCellType = null;
     currentCondType = null;

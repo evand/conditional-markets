@@ -197,9 +197,9 @@ button:disabled {
 
 .matrix-grid {
     display: grid;
-    grid-template-columns: 100px repeat(2, 1fr) 80px;
+    grid-template-columns: 100px repeat(2, 1fr) 80px 100px;
     gap: 2px;
-    min-width: 400px;
+    min-width: 500px;
 }
 
 .cell {
@@ -286,62 +286,39 @@ button:disabled {
     color: var(--success);
 }
 
-/* Conditionals Section */
-.conditionals-section {
-    background: var(--bg-secondary);
-    border-radius: 8px;
-    padding: 1.5rem;
-}
-
-.conditionals-section h3 {
-    color: var(--accent);
-    margin-bottom: 0.5rem;
-}
-
-.conditionals-intro {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-}
-
-.conditionals-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
-}
-
-.conditional-cell {
+/* Conditional cells in matrix */
+.cell.conditional {
     background: var(--bg-tertiary);
-    border: 2px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
+    border-left: 2px solid var(--accent);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s;
 }
 
-.conditional-cell:hover {
-    border-color: var(--accent);
+.cell.conditional:hover {
     background: var(--cell-hover);
 }
 
-.conditional-cell.selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 10px rgba(233, 69, 96, 0.3);
+.cell.conditional.selected {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
 }
 
-.conditional-cell .cond-formula {
-    font-size: 0.85rem;
+.cell.conditional .cond-label {
+    font-size: 0.75rem;
     color: var(--text-secondary);
+    margin-bottom: 2px;
 }
 
-.conditional-cell .cond-value {
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: var(--text-primary);
+.cell.conditional .cond-value {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--warning);
+}
+
+.cell.cond-header {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
 }
 
 /* Probability color coding */
@@ -647,8 +624,8 @@ button:disabled {
     }
 
     .matrix-grid {
-        grid-template-columns: 80px repeat(2, 1fr) 60px;
-        font-size: 0.85rem;
+        grid-template-columns: 70px repeat(2, 1fr) 50px 70px;
+        font-size: 0.8rem;
     }
 
     .cell.joint .prob-value {
