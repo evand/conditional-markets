@@ -2,6 +2,66 @@
 
 const API_BASE = 'https://api.manifold.markets/v0';
 
+// =============================================================================
+// AMM Core Math (CPMM with p=0.5)
+// =============================================================================
+
+/**
+ * Calculate shares received for a given cost.
+ * Formula: When buying YES, n_new = n + cost, y_new = k² / n_new
+ *          shares = cost + (y - y_new)
+ */
+function sharesForCost(y, n, cost, position) {
+    if (cost <= 0) return 0;
+    const kSquared = y * n;
+
+    if (position === 'YES') {
+        const nNew = n + cost;
+        const yNew = kSquared / nNew;
+        return cost + (y - yNew);
+    } else {
+        const yNew = y + cost;
+        const nNew = kSquared / yNew;
+        return cost + (n - nNew);
+    }
+}
+
+/**
+ * Calculate cost to buy a given number of shares.
+ * Formula: cost = (shares - y - n + sqrt((y + n - shares)² + 4 * shares * otherPool)) / 2
+ */
+function costForShares(y, n, shares, position) {
+    if (shares <= 0) return 0;
+    const otherPool = position === 'YES' ? n : y;
+    const discriminant = Math.pow(y + n - shares, 2) + 4 * shares * otherPool;
+    if (discriminant < 0) return Infinity;
+    return (shares - y - n + Math.sqrt(discriminant)) / 2;
+}
+
+/**
+ * Calculate pool state after a trade.
+ */
+function poolAfterTrade(y, n, cost, position) {
+    const kSquared = y * n;
+    if (position === 'YES') {
+        const nNew = n + cost;
+        const yNew = kSquared / nNew;
+        return { y: yNew, n: nNew };
+    } else {
+        const yNew = y + cost;
+        const nNew = kSquared / yNew;
+        return { y: yNew, n: nNew };
+    }
+}
+
+/**
+ * Calculate probability from pool state.
+ * P(YES) = n / (y + n) for p=0.5
+ */
+function probabilityFromPool(y, n) {
+    return n / (y + n);
+}
+
 // State
 let currentMarket = null;
 let currentMarketConfig = null;
@@ -222,6 +282,14 @@ function parseMarketProbabilities(market, config) {
         a_no_b_no: null
     };
 
+    // Store pool data for AMM calculations
+    const pools = {
+        a_yes_b_yes: null,
+        a_yes_b_no: null,
+        a_no_b_yes: null,
+        a_no_b_no: null
+    };
+
     // Build reverse mapping from answer text to cell type
     const textToCell = {};
     if (config.truthTable) {
@@ -245,6 +313,7 @@ function parseMarketProbabilities(market, config) {
         if (cellType && cellType in probs) {
             probs[cellType] = prob;
             answerIds[cellType] = answer.id;
+            pools[cellType] = answer.pool || null;
         } else {
             console.warn('Could not parse answer:', answer.text);
         }
@@ -272,6 +341,7 @@ function parseMarketProbabilities(market, config) {
             b_given_not_a: pB_given_notA
         },
         answerIds: answerIds,
+        pools: pools,
         answers: answers
     };
 }
@@ -571,10 +641,16 @@ function updateTradePreview() {
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
     const prob = marketProbabilities.joint[selectedCellType];
+    const pool = marketProbabilities.pools[selectedCellType];
     const answerText = currentMarketConfig.truthTable?.[selectedCellType] || selectedCellType;
 
-    // Simple estimate: shares ~ amount / prob (ignoring slippage)
-    const estimatedShares = prob > 0 ? (amount / prob).toFixed(1) : '?';
+    // Use real AMM math if pool data available, otherwise fall back to naive estimate
+    let estimatedShares;
+    if (pool && pool.YES && pool.NO) {
+        estimatedShares = sharesForCost(pool.YES, pool.NO, amount, 'YES').toFixed(1);
+    } else {
+        estimatedShares = prob > 0 ? (amount / prob).toFixed(1) : '?';
+    }
 
     const tradePlan = document.getElementById('trade-plan');
     tradePlan.innerHTML = `
@@ -747,18 +823,35 @@ function updateConditionalTradePreview() {
     // N = amount, so M$10 bet buys 10 shares of each hedge outcome.
     const hedgeSharesPerCell = amount;
 
-    // Calculate hedge cost: N shares × prob for each cell
+    // Calculate hedge cost using real AMM math: costForShares(y, n, shares, 'YES')
     let totalHedgeCost = 0;
     const hedgeCellCosts = [];
     for (const cellName of config.hedgeCells) {
         const cellProb = marketProbabilities.joint[cellName];
-        const cellCost = hedgeSharesPerCell * cellProb;
+        const pool = marketProbabilities.pools[cellName];
+
+        // Use AMM if pool available, otherwise naive estimate
+        let cellCost;
+        if (pool && pool.YES && pool.NO) {
+            cellCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
+        } else {
+            cellCost = hedgeSharesPerCell * cellProb;
+        }
+
         hedgeCellCosts.push({ cellName, cellProb, cellCost });
         totalHedgeCost += cellCost;
     }
 
-    const targetAmount = amount - totalHedgeCost;
-    const targetShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
+    const targetAmount = Math.max(0, amount - totalHedgeCost);
+    const targetPool = marketProbabilities.pools[targetCell];
+
+    // Calculate target shares using AMM
+    let targetShares;
+    if (targetPool && targetPool.YES && targetPool.NO && targetAmount > 0) {
+        targetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES').toFixed(1);
+    } else {
+        targetShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
+    }
 
     // Build trade plan HTML
     let stepNum = 1;
@@ -1016,7 +1109,16 @@ function updateMarginalTradePreview() {
     config.cells.forEach((cellName, idx) => {
         const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
         const cellProb = marketProbabilities.joint[cellName];
-        const estShares = cellProb > 0 ? (perCellAmount / cellProb).toFixed(1) : '?';
+        const pool = marketProbabilities.pools[cellName];
+
+        // Use AMM if pool available
+        let estShares;
+        if (pool && pool.YES && pool.NO) {
+            estShares = sharesForCost(pool.YES, pool.NO, perCellAmount, 'YES').toFixed(1);
+        } else {
+            estShares = cellProb > 0 ? (perCellAmount / cellProb).toFixed(1) : '?';
+        }
+
         stepsHtml += `
             <div class="trade-step target">
                 <span class="trade-step-num">${idx + 1}</span>
