@@ -581,7 +581,7 @@ function updateTradePreview() {
         <div class="trade-step target">
             <span class="trade-step-num">1</span>
             <div class="trade-step-details">
-                <div class="trade-step-action">Buy YES</div>
+                <div class="trade-step-action">Buy YES → ~${estimatedShares} shares</div>
                 <div class="trade-step-answer">${answerText}</div>
             </div>
             <span class="trade-step-amount">M$${amount.toFixed(2)}</span>
@@ -757,11 +757,12 @@ function updateConditionalTradePreview() {
     for (const cellName of config.hedgeCells) {
         const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
         const cellProb = marketProbabilities.joint[cellName];
+        const hedgeShares = cellProb > 0 ? (perHedgeAmount / cellProb).toFixed(1) : '?';
         stepsHtml += `
             <div class="trade-step hedge">
                 <span class="trade-step-num">${stepNum++}</span>
                 <div class="trade-step-details">
-                    <div class="trade-step-action">Hedge: Buy YES</div>
+                    <div class="trade-step-action">Hedge: Buy YES → ~${hedgeShares} shares</div>
                     <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
                 </div>
                 <span class="trade-step-amount">M$${perHedgeAmount.toFixed(2)}</span>
@@ -775,7 +776,7 @@ function updateConditionalTradePreview() {
         <div class="trade-step target">
             <span class="trade-step-num">${stepNum}</span>
             <div class="trade-step-details">
-                <div class="trade-step-action">Target: Buy YES</div>
+                <div class="trade-step-action">Target: Buy YES → ~${estimatedShares} shares</div>
                 <div class="trade-step-answer">${targetText} (${formatProb(targetProb)})</div>
             </div>
             <span class="trade-step-amount">M$${targetAmount.toFixed(2)}</span>
@@ -939,11 +940,12 @@ function updateMarginalTradePreview() {
     config.cells.forEach((cellName, idx) => {
         const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
         const cellProb = marketProbabilities.joint[cellName];
+        const estShares = cellProb > 0 ? (perCellAmount / cellProb).toFixed(1) : '?';
         stepsHtml += `
             <div class="trade-step target">
                 <span class="trade-step-num">${idx + 1}</span>
                 <div class="trade-step-details">
-                    <div class="trade-step-action">Buy YES</div>
+                    <div class="trade-step-action">Buy YES → ~${estShares} shares</div>
                     <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
                 </div>
                 <span class="trade-step-amount">M$${perCellAmount.toFixed(2)}</span>
