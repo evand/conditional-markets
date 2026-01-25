@@ -365,6 +365,44 @@ button:disabled {
     font-size: 0.9rem;
 }
 
+.bet-direction-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.bet-direction-row label {
+    font-weight: 500;
+}
+
+.direction-toggle {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.direction-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+
+.direction-btn:hover {
+    border-color: var(--accent);
+}
+
+.direction-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.direction-btn.active[data-direction="no"] {
+    background: var(--error);
+    border-color: var(--error);
+}
+
 .bet-input-row {
     display: flex;
     align-items: center;

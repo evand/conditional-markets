@@ -111,6 +111,16 @@ function setupEventListeners() {
     document.getElementById('panel-bet-amount').addEventListener('input', updatePanelPreview);
     document.getElementById('panel-execute-bet').addEventListener('click', executePanelBet);
 
+    // Direction toggle
+    document.querySelectorAll('.direction-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.direction-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentBetDirection = btn.dataset.direction;
+            updatePanelPreview();
+        });
+    });
+
     // Joint cell clicks for direct betting
     document.querySelectorAll('.cell.joint').forEach(cell => {
         cell.addEventListener('click', () => {
@@ -495,9 +505,12 @@ function openBetPanel(cellType, cellElement) {
     if (!marketProbabilities) return;
 
     // Clear previous selection and modes
-    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
     currentCondType = null;
     currentMarginalType = null;
+
+    // Hide direction row for direct bets
+    document.getElementById('bet-direction-row').style.display = 'none';
 
     // Select new cell
     selectedCell = cellElement;
@@ -608,36 +621,47 @@ async function executeDirectBet() {
 
 // Conditional Betting (with hedging)
 let currentCondType = null;
+let currentBetDirection = 'yes';  // 'yes' or 'no'
 
 // Hedge configurations for each conditional bet type
+// For YES direction: hedge the condition, buy the target
+// For NO direction: same hedge, but opposite target
 const HEDGE_CONFIG = {
     'a_given_b': {
-        // To bet on P(A|B): hedge with ~B outcomes, target A&B
+        // To bet on P(A|B): hedge with ~B outcomes
         hedgeCells: ['a_yes_b_no', 'a_no_b_no'],  // ~B outcomes
-        targetCell: 'a_yes_b_yes',                 // A&B
+        targetYes: 'a_yes_b_yes',                  // A&B (YES: A happens given B)
+        targetNo: 'a_no_b_yes',                    // ~A&B (NO: A doesn't happen given B)
         hedgeMarginal: 'pNotB',
-        description: (cfg) => `Bet on ${cfg.labelA} conditional on ${cfg.labelB} happening`
+        descYes: (cfg) => `Bet ${cfg.labelA} happens given ${cfg.labelB}`,
+        descNo: (cfg) => `Bet ${cfg.labelA} does NOT happen given ${cfg.labelB}`
     },
     'a_given_not_b': {
-        // To bet on P(A|~B): hedge with B outcomes, target A&~B
+        // To bet on P(A|~B): hedge with B outcomes
         hedgeCells: ['a_yes_b_yes', 'a_no_b_yes'],  // B outcomes
-        targetCell: 'a_yes_b_no',                   // A&~B
+        targetYes: 'a_yes_b_no',                    // A&~B
+        targetNo: 'a_no_b_no',                      // ~A&~B
         hedgeMarginal: 'pB',
-        description: (cfg) => `Bet on ${cfg.labelA} conditional on ${cfg.labelB} NOT happening`
+        descYes: (cfg) => `Bet ${cfg.labelA} happens given ~${cfg.labelB}`,
+        descNo: (cfg) => `Bet ${cfg.labelA} does NOT happen given ~${cfg.labelB}`
     },
     'b_given_a': {
-        // To bet on P(B|A): hedge with ~A outcomes, target A&B
+        // To bet on P(B|A): hedge with ~A outcomes
         hedgeCells: ['a_no_b_yes', 'a_no_b_no'],   // ~A outcomes
-        targetCell: 'a_yes_b_yes',                  // A&B
+        targetYes: 'a_yes_b_yes',                   // A&B (YES: B happens given A)
+        targetNo: 'a_yes_b_no',                     // A&~B (NO: B doesn't happen given A)
         hedgeMarginal: 'pNotA',
-        description: (cfg) => `Bet on ${cfg.labelB} conditional on ${cfg.labelA} happening`
+        descYes: (cfg) => `Bet ${cfg.labelB} happens given ${cfg.labelA}`,
+        descNo: (cfg) => `Bet ${cfg.labelB} does NOT happen given ${cfg.labelA}`
     },
     'b_given_not_a': {
-        // To bet on P(B|~A): hedge with A outcomes, target ~A&B
+        // To bet on P(B|~A): hedge with A outcomes
         hedgeCells: ['a_yes_b_yes', 'a_yes_b_no'],  // A outcomes
-        targetCell: 'a_no_b_yes',                   // ~A&B
+        targetYes: 'a_no_b_yes',                    // ~A&B
+        targetNo: 'a_no_b_no',                      // ~A&~B
         hedgeMarginal: 'pA',
-        description: (cfg) => `Bet on ${cfg.labelB} conditional on ${cfg.labelA} NOT happening`
+        descYes: (cfg) => `Bet ${cfg.labelB} happens given ~${cfg.labelA}`,
+        descNo: (cfg) => `Bet ${cfg.labelB} does NOT happen given ~${cfg.labelA}`
     }
 };
 
@@ -648,19 +672,27 @@ function openConditionalBetPanel(condType, cellElement) {
     if (!config) return;
 
     // Clear previous selection
-    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
 
     // Select new cell
     selectedCell = cellElement;
     currentCondType = condType;
+    currentBetDirection = 'yes';  // Reset to YES
     cellElement.classList.add('selected');
+
+    // Reset direction buttons
+    document.querySelectorAll('.direction-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.direction-btn[data-direction="yes"]').classList.add('active');
+
+    // Show direction row for conditional bets
+    document.getElementById('bet-direction-row').style.display = 'flex';
 
     // Get conditional probability
     const condProb = marketProbabilities.conditionals[condType];
-    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
 
-    document.getElementById('bet-panel-title').textContent = `Conditional Bet: P(${condType.replace('_given_', '|').replace('_', '~').toUpperCase()})`;
-    document.getElementById('bet-panel-description').textContent = config.description(currentMarketConfig);
+    const label = condType.replace('_given_', '|').replace('not_', '~').toUpperCase();
+    document.getElementById('bet-panel-title').textContent = `Conditional Bet: ${label}`;
+    document.getElementById('bet-panel-description').textContent = config.descYes(currentMarketConfig);
 
     updateConditionalTradePreview();
     document.getElementById('bet-panel').classList.remove('hidden');
@@ -677,20 +709,25 @@ function updateConditionalTradePreview() {
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
     const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
-    const targetProb = marketProbabilities.joint[config.targetCell];
+
+    // Get target based on direction
+    const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
+    const targetProb = marketProbabilities.joint[targetCell];
+
+    // Update description based on direction
+    const desc = currentBetDirection === 'yes' ? config.descYes : config.descNo;
+    document.getElementById('bet-panel-description').textContent = desc(currentMarketConfig);
 
     // Split: hedgeAmount proportional to hedge cost, rest to target
     const hedgeAmount = amount * hedgeCost;
     const targetAmount = amount - hedgeAmount;
     const estimatedShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
 
-    const hedgeLabel = config.hedgeCells.map(c =>
-        currentMarketConfig.truthTable?.[c]?.substring(0, 20) + '...' || c
-    ).join(' + ');
+    const targetLabel = currentMarketConfig.truthTable?.[targetCell] || targetCell;
 
     document.getElementById('preview-buy').innerHTML = `
         <div>Hedge (~${(hedgeCost * 100).toFixed(0)}%): M$${hedgeAmount.toFixed(2)}</div>
-        <div>Target: M$${targetAmount.toFixed(2)}</div>
+        <div>Target (${targetLabel.substring(0, 30)}): M$${targetAmount.toFixed(2)}</div>
     `;
     document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)} total`;
     document.getElementById('preview-shares').textContent = `~${estimatedShares} target shares`;
@@ -716,6 +753,9 @@ async function executeConditionalBet() {
     const hedgeAmount = amount * hedgeCost;
     const targetAmount = amount - hedgeAmount;
 
+    // Get target based on direction
+    const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
+
     const executeBtn = document.getElementById('panel-execute-bet');
     executeBtn.disabled = true;
     executeBtn.textContent = 'Placing bets...';
@@ -734,16 +774,17 @@ async function executeConditionalBet() {
         }
 
         // Place target bet
-        const targetAnswerId = marketProbabilities.answerIds[config.targetCell];
-        if (!targetAnswerId) throw new Error(`No answer ID for target ${config.targetCell}`);
+        const targetAnswerId = marketProbabilities.answerIds[targetCell];
+        if (!targetAnswerId) throw new Error(`No answer ID for target ${targetCell}`);
 
         const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswerId, 'YES', Math.max(1, Math.round(targetAmount)));
-        results.push({ type: 'target', cell: config.targetCell, result: targetResult });
+        results.push({ type: 'target', cell: targetCell, result: targetResult });
 
         // Show success
         const totalSpent = results.reduce((sum, r) => sum + (r.result.amount || 0), 0);
+        const dirLabel = currentBetDirection === 'yes' ? 'YES' : 'NO';
         showResultDialog('Conditional Bet Placed',
-            `Placed ${results.length} bets totaling M$${totalSpent.toFixed(2)}`, false);
+            `Placed ${dirLabel} bet with ${results.length} orders totaling M$${totalSpent.toFixed(2)}`, false);
         closeBetPanel();
         currentCondType = null;
 
@@ -786,12 +827,15 @@ function openMarginalBetPanel(marginalType, cellElement) {
     if (!config) return;
 
     // Clear previous selection
-    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
 
     selectedCell = cellElement;
     currentMarginalType = marginalType;
     currentCondType = null;  // Clear conditional mode
     cellElement.classList.add('selected');
+
+    // Hide direction row for marginal bets
+    document.getElementById('bet-direction-row').style.display = 'none';
 
     // Get marginal probability
     const marginalKey = 'p' + marginalType.charAt(0).toUpperCase() + marginalType.slice(1).replace('_', '');
