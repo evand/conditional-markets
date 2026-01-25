@@ -287,6 +287,8 @@ function multiChoiceCostForShares(allPools, targetId, targetShares, position) {
 let currentMarket = null;
 let currentMarketConfig = null;
 let marketProbabilities = null;
+let currentUserId = null;
+let currentPositions = null;  // Map of answerId -> {YES: shares, NO: shares}
 
 // DOM Elements
 const marketSelect = document.getElementById('market-select');
@@ -638,6 +640,10 @@ function setupEventListeners() {
         localStorage.removeItem('manifold_api_key');
         apiKeyStatus.textContent = '';
         apiKeyStatus.classList.remove('saved');
+        // Clear user and positions
+        currentUserId = null;
+        currentPositions = null;
+        displayPositions();  // Remove position displays from UI
     });
 
     // Dialog handlers
@@ -734,10 +740,33 @@ async function loadMarket(config) {
         // Parse probabilities from answers
         marketProbabilities = parseMarketProbabilities(market, config);
 
+        // Fetch positions if authenticated
+        currentPositions = null;
+        const apiKey = apiKeyInput.value.trim();
+        if (apiKey) {
+            try {
+                // Get user ID if we don't have it
+                if (!currentUserId) {
+                    const user = await fetchCurrentUser(apiKey);
+                    if (user) {
+                        currentUserId = user.id;
+                    }
+                }
+                // Fetch positions
+                if (currentUserId) {
+                    const positions = await fetchPositions(market.id, currentUserId);
+                    currentPositions = positions;
+                }
+            } catch (e) {
+                console.warn('Failed to fetch positions:', e);
+            }
+        }
+
         // Update UI
         displayMarketInfo(market);
         displayMatrix(marketProbabilities, config);
         displayConditionals(marketProbabilities);
+        displayPositions();
 
         hideLoading();
         matrixContainer.classList.remove('hidden');
@@ -755,6 +784,45 @@ async function fetchMarket(slug) {
         throw new Error(`API error: ${response.status}`);
     }
     return response.json();
+}
+
+/**
+ * Fetch current user info (requires API key).
+ */
+async function fetchCurrentUser(apiKey) {
+    const response = await fetch(`${API_BASE}/me`, {
+        headers: { 'Authorization': `Key ${apiKey}` }
+    });
+    if (!response.ok) {
+        return null;  // Not authenticated or invalid key
+    }
+    return response.json();
+}
+
+/**
+ * Fetch positions for a market.
+ * @param {string} marketId - The market ID
+ * @param {string} userId - The user ID to fetch positions for
+ * @returns {Object} Map of answerId -> {YES: shares, NO: shares}
+ */
+async function fetchPositions(marketId, userId) {
+    const response = await fetch(`${API_BASE}/market/${marketId}/positions?userId=${userId}`);
+    if (!response.ok) {
+        return {};
+    }
+    const data = await response.json();
+
+    // Convert to map by answerId
+    const positions = {};
+    for (const pos of data) {
+        if (pos.answerId && pos.totalShares) {
+            positions[pos.answerId] = {
+                YES: pos.totalShares.YES || 0,
+                NO: pos.totalShares.NO || 0
+            };
+        }
+    }
+    return positions;
 }
 
 function parseMarketProbabilities(market, config) {
@@ -1065,6 +1133,54 @@ function displayDerivedStats(probs) {
     const orEl = document.getElementById('stat-odds-ratio');
     orEl.textContent = oddsRatio === Infinity ? '∞' : oddsRatio.toFixed(2);
     orEl.className = 'stat-value ' + (oddsRatio > 1.5 ? 'positive' : oddsRatio < 0.67 ? 'negative' : 'neutral');
+}
+
+/**
+ * Display current user's positions in the matrix cells.
+ */
+function displayPositions() {
+    const cellIds = {
+        'a_yes_b_yes': 'cell-a-b',
+        'a_yes_b_no': 'cell-a-not-b',
+        'a_no_b_yes': 'cell-not-a-b',
+        'a_no_b_no': 'cell-not-a-not-b'
+    };
+
+    for (const [cellType, cellId] of Object.entries(cellIds)) {
+        const cell = document.getElementById(cellId);
+        if (!cell) continue;
+
+        // Remove existing position display
+        const existingPos = cell.querySelector('.position-display');
+        if (existingPos) existingPos.remove();
+
+        // Get position for this cell
+        if (!currentPositions || !marketProbabilities) continue;
+
+        const answerId = marketProbabilities.answerIds[cellType];
+        if (!answerId) continue;
+
+        const pos = currentPositions[answerId];
+        if (!pos) continue;
+
+        const yesShares = pos.YES || 0;
+        const noShares = pos.NO || 0;
+
+        // Only show if user has shares
+        if (Math.abs(yesShares) < 0.01 && Math.abs(noShares) < 0.01) continue;
+
+        // Create position display element
+        const posEl = document.createElement('div');
+        posEl.className = 'position-display';
+
+        if (yesShares > 0.01) {
+            posEl.innerHTML = `<span class="pos-yes">+${yesShares.toFixed(0)} YES</span>`;
+        } else if (noShares > 0.01) {
+            posEl.innerHTML = `<span class="pos-no">+${noShares.toFixed(0)} NO</span>`;
+        }
+
+        cell.appendChild(posEl);
+    }
 }
 
 function formatProb(p) {

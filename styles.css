@@ -991,3 +991,32 @@ button:disabled {
         grid-template-columns: repeat(2, 1fr);
     }
 }
+
+/* Position Display */
+.position-display {
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.cell.joint {
+    position: relative;
+}
+
+.pos-yes {
+    color: var(--success);
+    background: rgba(74, 222, 128, 0.15);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+.pos-no {
+    color: var(--accent);
+    background: rgba(233, 69, 96, 0.15);
+    padding: 1px 4px;
+    border-radius: 3px;
+}
