@@ -94,5 +94,53 @@
       "a_no_b_yes": "The winner will have won only the jury vote",
       "a_no_b_no": "The winner will have won neither the public nor the jury votes"
     }
+  },
+  {
+    "name": "Russia Nuke / Coup",
+    "slug": "russia-coupnuke-combination-market",
+    "labelA": "Nuke Ukraine",
+    "labelB": "Coup success",
+    "truthTable": {
+      "a_yes_b_yes": "Yes nuke Ukraine, Yes coup success",
+      "a_yes_b_no": "Yes nuke Ukraine, No coup success",
+      "a_no_b_yes": "No nuke Ukraine, Yes coup success",
+      "a_no_b_no": "No nuke Ukraine, No coup success"
+    }
+  },
+  {
+    "name": "Messi / Ronaldo 1000 Goals",
+    "slug": "will-messi-and-ronaldo-both-reach-1",
+    "labelA": "Messi 1000",
+    "labelB": "Ronaldo 1000",
+    "truthTable": {
+      "a_yes_b_yes": "Yes, both Messi and Ronaldo will reach 1000 career goals.",
+      "a_yes_b_no": "Only Messi will reach 1000 career goals.",
+      "a_no_b_yes": "Only Ronaldo will reach 1000 career goals.",
+      "a_no_b_no": "Neither will reach 1000 career goals."
+    }
+  },
+  {
+    "name": "Iran 2030 Regime / Nukes",
+    "slug": "state-of-iran-in-2030",
+    "labelA": "Same regime",
+    "labelB": "Has nukes",
+    "truthTable": {
+      "a_yes_b_yes": "Current regime in power, with nukes",
+      "a_yes_b_no": "Current regime in power, no nukes",
+      "a_no_b_yes": "Different regime in power, with nukes",
+      "a_no_b_no": "Different regime in power, no nukes"
+    }
+  },
+  {
+    "name": "Large States Redistrict",
+    "slug": "large-states-redistrict-before-2026",
+    "labelA": "Texas",
+    "labelB": "CA or NY",
+    "truthTable": {
+      "a_yes_b_yes": "Texas, as well as California or New York",
+      "a_yes_b_no": "Texas, but neither California nor New York",
+      "a_no_b_yes": "California or New York, but not Texas",
+      "a_no_b_no": "None of Texas, California, and New York"
+    }
   }
 ]
