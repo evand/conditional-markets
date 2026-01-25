@@ -571,14 +571,38 @@ function updateTradePreview() {
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
     const prob = marketProbabilities.joint[selectedCellType];
+    const answerText = currentMarketConfig.truthTable?.[selectedCellType] || selectedCellType;
 
     // Simple estimate: shares ~ amount / prob (ignoring slippage)
     const estimatedShares = prob > 0 ? (amount / prob).toFixed(1) : '?';
 
-    document.getElementById('preview-buy').textContent =
-        `YES on "${currentMarketConfig.truthTable?.[selectedCellType] || selectedCellType}"`;
-    document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)}`;
-    document.getElementById('preview-shares').textContent = `~${estimatedShares} shares`;
+    const tradePlan = document.getElementById('trade-plan');
+    tradePlan.innerHTML = `
+        <div class="trade-step target">
+            <span class="trade-step-num">1</span>
+            <div class="trade-step-details">
+                <div class="trade-step-action">Buy YES</div>
+                <div class="trade-step-answer">${answerText}</div>
+            </div>
+            <span class="trade-step-amount">M$${amount.toFixed(2)}</span>
+        </div>
+    `;
+
+    const tradeSummary = document.getElementById('trade-summary');
+    tradeSummary.innerHTML = `
+        <div class="summary-row">
+            <span class="summary-label">Current prob:</span>
+            <span class="summary-value">${formatProb(prob)}</span>
+        </div>
+        <div class="summary-row">
+            <span class="summary-label">Est. shares:</span>
+            <span class="summary-value">~${estimatedShares}</span>
+        </div>
+        <div class="summary-row total">
+            <span class="summary-label">Total cost:</span>
+            <span class="summary-value">M$${amount.toFixed(2)}</span>
+        </div>
+    `;
 }
 
 async function executeDirectBet() {
@@ -713,6 +737,7 @@ function updateConditionalTradePreview() {
     // Get target based on direction
     const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
     const targetProb = marketProbabilities.joint[targetCell];
+    const condProb = marketProbabilities.conditionals[currentCondType];
 
     // Update description based on direction
     const desc = currentBetDirection === 'yes' ? config.descYes : config.descNo;
@@ -721,16 +746,64 @@ function updateConditionalTradePreview() {
     // Split: hedgeAmount proportional to hedge cost, rest to target
     const hedgeAmount = amount * hedgeCost;
     const targetAmount = amount - hedgeAmount;
+    const perHedgeAmount = hedgeAmount / config.hedgeCells.length;
     const estimatedShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
 
-    const targetLabel = currentMarketConfig.truthTable?.[targetCell] || targetCell;
+    // Build trade plan HTML
+    let stepNum = 1;
+    let stepsHtml = '';
 
-    document.getElementById('preview-buy').innerHTML = `
-        <div>Hedge (~${(hedgeCost * 100).toFixed(0)}%): M$${hedgeAmount.toFixed(2)}</div>
-        <div>Target (${targetLabel.substring(0, 30)}): M$${targetAmount.toFixed(2)}</div>
+    // Hedge bets
+    for (const cellName of config.hedgeCells) {
+        const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
+        const cellProb = marketProbabilities.joint[cellName];
+        stepsHtml += `
+            <div class="trade-step hedge">
+                <span class="trade-step-num">${stepNum++}</span>
+                <div class="trade-step-details">
+                    <div class="trade-step-action">Hedge: Buy YES</div>
+                    <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
+                </div>
+                <span class="trade-step-amount">M$${perHedgeAmount.toFixed(2)}</span>
+            </div>
+        `;
+    }
+
+    // Target bet
+    const targetText = currentMarketConfig.truthTable?.[targetCell] || targetCell;
+    stepsHtml += `
+        <div class="trade-step target">
+            <span class="trade-step-num">${stepNum}</span>
+            <div class="trade-step-details">
+                <div class="trade-step-action">Target: Buy YES</div>
+                <div class="trade-step-answer">${targetText} (${formatProb(targetProb)})</div>
+            </div>
+            <span class="trade-step-amount">M$${targetAmount.toFixed(2)}</span>
+        </div>
     `;
-    document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)} total`;
-    document.getElementById('preview-shares').textContent = `~${estimatedShares} target shares`;
+
+    document.getElementById('trade-plan').innerHTML = stepsHtml;
+
+    // Summary
+    const effectiveProb = currentBetDirection === 'yes' ? condProb : (1 - condProb);
+    document.getElementById('trade-summary').innerHTML = `
+        <div class="summary-row">
+            <span class="summary-label">Conditional prob:</span>
+            <span class="summary-value">${formatProb(effectiveProb)}</span>
+        </div>
+        <div class="summary-row">
+            <span class="summary-label">Hedge cost:</span>
+            <span class="summary-value">M$${hedgeAmount.toFixed(2)} (${formatProb(hedgeCost)})</span>
+        </div>
+        <div class="summary-row">
+            <span class="summary-label">Target shares:</span>
+            <span class="summary-value">~${estimatedShares}</span>
+        </div>
+        <div class="summary-row total">
+            <span class="summary-label">Total cost:</span>
+            <span class="summary-value">M$${amount.toFixed(2)}</span>
+        </div>
+    `;
 }
 
 async function executeConditionalBet() {
@@ -858,15 +931,43 @@ function updateMarginalTradePreview() {
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
     const perCellAmount = amount / config.cells.length;
 
-    const cellLabels = config.cells.map(c =>
-        currentMarketConfig.truthTable?.[c]?.substring(0, 25) || c
-    );
+    // Calculate marginal probability
+    const marginalProb = config.cells.reduce((sum, c) => sum + marketProbabilities.joint[c], 0);
 
-    document.getElementById('preview-buy').innerHTML = cellLabels.map(label =>
-        `<div>• ${label}: M$${perCellAmount.toFixed(2)}</div>`
-    ).join('');
-    document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)} total`;
-    document.getElementById('preview-shares').textContent = `Split across ${config.cells.length} outcomes`;
+    // Build trade plan HTML
+    let stepsHtml = '';
+    config.cells.forEach((cellName, idx) => {
+        const answerText = currentMarketConfig.truthTable?.[cellName] || cellName;
+        const cellProb = marketProbabilities.joint[cellName];
+        stepsHtml += `
+            <div class="trade-step target">
+                <span class="trade-step-num">${idx + 1}</span>
+                <div class="trade-step-details">
+                    <div class="trade-step-action">Buy YES</div>
+                    <div class="trade-step-answer">${answerText} (${formatProb(cellProb)})</div>
+                </div>
+                <span class="trade-step-amount">M$${perCellAmount.toFixed(2)}</span>
+            </div>
+        `;
+    });
+
+    document.getElementById('trade-plan').innerHTML = stepsHtml;
+
+    // Summary
+    document.getElementById('trade-summary').innerHTML = `
+        <div class="summary-row">
+            <span class="summary-label">Marginal prob:</span>
+            <span class="summary-value">${formatProb(marginalProb)}</span>
+        </div>
+        <div class="summary-row">
+            <span class="summary-label">Per outcome:</span>
+            <span class="summary-value">M$${perCellAmount.toFixed(2)}</span>
+        </div>
+        <div class="summary-row total">
+            <span class="summary-label">Total cost:</span>
+            <span class="summary-value">M$${amount.toFixed(2)}</span>
+        </div>
+    `;
 }
 
 async function executeMarginalBet() {

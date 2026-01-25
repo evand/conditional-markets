@@ -425,17 +425,94 @@ button:disabled {
     padding: 1rem;
 }
 
-.preview-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.25rem 0;
+.trade-preview h4 {
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
 }
 
-.preview-label {
+.trade-plan {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.trade-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.trade-step.hedge {
+    border-left: 3px solid var(--warning);
+}
+
+.trade-step.target {
+    border-left: 3px solid var(--success);
+}
+
+.trade-step-num {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.trade-step-details {
+    flex: 1;
+}
+
+.trade-step-action {
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.trade-step-answer {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.trade-step-amount {
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+}
+
+.trade-summary {
+    border-top: 1px solid var(--border);
+    padding-top: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0;
+}
+
+.summary-row.total {
+    font-weight: 600;
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+}
+
+.summary-label {
     color: var(--text-secondary);
 }
 
-.preview-value {
+.summary-value {
     font-weight: 600;
 }
 

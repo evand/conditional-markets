@@ -21,7 +21,7 @@
 ## Future
 - [ ] User enters slug directly and maps outcomes to grid
 - [ ] Arbitrary multi-choice outcome grouping
-- [ ] Ternary market support (A/B/Other)
+- [ ] Ternary market support (A/~A/Other -- "first class n/a")
 - [ ] Bet history display
 - [ ] Multiple markets comparison view
 - [ ] Security audit: we're handling real API keys and using them. What should we be concerned about?
