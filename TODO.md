@@ -1,29 +1,38 @@
 # Conditional Markets Viewer - TODO
 
-## MVP
+## Completed
 - [x] Project scaffolding
 - [x] Market data fetching from Manifold API
-- [x] Parse 2×2 structure from multi-choice answers (explicit truthTable mapping)
+- [x] Parse 2×2 structure (explicit truthTable mapping in markets.json)
 - [x] Confusion matrix UI with joint probabilities
 - [x] Marginal and conditional probability display
 - [x] Market selector dropdown
 - [x] API key handling (localStorage)
 - [x] Direct cell betting (click joint cell → bet panel)
+- [x] Conditional betting with hedging (buy N shares each hedge cell, rest on target)
+- [x] Marginal betting (multi-bet on row/column cells)
+- [x] Trade plan display with estimated shares
+- [x] 2×2 payout matrix (WIN/LOSE/NEUTRAL for each outcome)
+- [x] Direction toggle (YES/NO) for conditional bets
 - [x] Dark theme styling
 
 ## Next Up
-- [ ] Conditional betting on P(A|B) cells - click to buy with hedging
-      Strategy: To bet on P(A|B), buy 1 share each of ~B outcomes (hedge),
-      spend rest on A&B. Neutral on B outcome, exposed to A|B.
-- [ ] Marginal betting on P(A)/P(B) rows/cols - multi-bet on all cells in row/col
-- [ ] AMM modeling for accurate cost estimates (sequential bets move market)
+- [ ] AMM modeling for accurate cost/shares estimates
+      Current: shares ≈ amount/prob (ignores slippage)
+      Need: Proper CPMM math from manifold library
+- [ ] API dry-run validation
+      Verify our forecasts match Manifold's calculations
+      Use /v0/bet with dryRun=true parameter
+- [ ] User-defined slugs
+      Enter any market slug, manually map 4 outcomes to grid cells
+- [ ] Add more conditional markets to markets.json
+      Check verified_arbitrage.yaml for 2x2_joint patterns
 
 ## Future
-- [ ] User enters slug directly and maps outcomes to grid
-- [ ] Arbitrary multi-choice outcome grouping
-- [ ] Ternary market support (A/~A/Other -- "first class n/a")
-- [ ] Bet history display
-- [ ] Multiple markets comparison view
-- [ ] Security audit: we're handling real API keys and using them. What should we be concerned about?
-- [ ] mutual information and phi coefficient
-  - [ ] betting up or down on same, in a directionally neutral manner
+- [ ] Position display (show current shares in each cell)
+- [ ] Multi-bet API for atomic execution (reduces slippage, but sizes differ)
+- [ ] Ternary market support (A/~A/Other)
+- [ ] Arbitrage detection (flag mispriced conditionals vs joints)
+- [ ] Expected value calculator
+- [ ] Security audit for API key handling
+- [ ] Mutual information / phi coefficient display
