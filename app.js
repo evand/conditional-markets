@@ -168,8 +168,12 @@ function setupEventListeners() {
 
     // Bet panel handlers
     document.getElementById('close-bet-panel').addEventListener('click', closeBetPanel);
-    document.getElementById('panel-bet-amount').addEventListener('input', updatePanelPreview);
+    document.getElementById('panel-bet-amount').addEventListener('input', () => {
+        updatePanelPreview();
+        clearValidation();  // Clear validation when amount changes
+    });
     document.getElementById('panel-execute-bet').addEventListener('click', executePanelBet);
+    document.getElementById('panel-validate-btn').addEventListener('click', validateWithApi);
 
     // Direction toggle
     document.querySelectorAll('.direction-btn').forEach(btn => {
@@ -679,6 +683,266 @@ function updateTradePreview() {
             <span class="summary-value">M$${amount.toFixed(2)}</span>
         </div>
     `;
+}
+
+// =============================================================================
+// API Dry-Run Validation
+// =============================================================================
+
+function clearValidation() {
+    document.getElementById('validation-status').textContent = '';
+    document.getElementById('validation-status').className = 'validation-status';
+    document.getElementById('validation-details').classList.add('hidden');
+}
+
+async function validateWithApi() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        showError('API key required for validation');
+        return;
+    }
+
+    if (!currentMarket || !marketProbabilities) {
+        showError('No market loaded');
+        return;
+    }
+
+    const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
+    const statusEl = document.getElementById('validation-status');
+    const detailsEl = document.getElementById('validation-details');
+
+    statusEl.textContent = '(validating...)';
+    statusEl.className = 'validation-status pending';
+
+    try {
+        // For direct bets, validate the single cell
+        if (selectedCellType && !currentCondType && !currentMarginalType) {
+            await validateDirectBet(amount, statusEl, detailsEl);
+        }
+        // For conditional bets, validate each leg
+        else if (currentCondType) {
+            await validateConditionalBet(amount, statusEl, detailsEl);
+        }
+        // For marginal bets, validate each cell
+        else if (currentMarginalType) {
+            await validateMarginalBet(amount, statusEl, detailsEl);
+        }
+    } catch (error) {
+        statusEl.textContent = '(error)';
+        statusEl.className = 'validation-status invalid';
+        detailsEl.innerHTML = `<div class="validation-row"><span class="value mismatch">Error: ${error.message}</span></div>`;
+        detailsEl.classList.remove('hidden');
+    }
+}
+
+async function validateDirectBet(amount, statusEl, detailsEl) {
+    const pool = marketProbabilities.pools[selectedCellType];
+    const answerId = marketProbabilities.answerIds[selectedCellType];
+
+    // Our estimate
+    let localShares = 0;
+    if (pool && pool.YES && pool.NO) {
+        localShares = sharesForCost(pool.YES, pool.NO, amount, 'YES');
+    }
+
+    // API dry-run
+    const apiResult = await placeBetDryRun(currentMarket.id, answerId, 'YES', amount);
+    const apiShares = apiResult.shares || 0;
+
+    // Compare
+    const error = Math.abs(localShares - apiShares);
+    const errorPct = apiShares > 0 ? (error / apiShares * 100) : 0;
+    const isMatch = errorPct < 1;  // Within 1% is a match
+
+    statusEl.textContent = isMatch ? '✓ validated' : '✗ mismatch';
+    statusEl.className = `validation-status ${isMatch ? 'valid' : 'invalid'}`;
+
+    detailsEl.innerHTML = `
+        <div class="validation-row">
+            <span class="label">Local AMM:</span>
+            <span class="value">${localShares.toFixed(4)} shares</span>
+        </div>
+        <div class="validation-row">
+            <span class="label">API dry-run:</span>
+            <span class="value">${apiShares.toFixed(4)} shares</span>
+        </div>
+        <div class="validation-row">
+            <span class="label">Difference:</span>
+            <span class="value ${isMatch ? 'match' : 'mismatch'}">${error.toFixed(4)} (${errorPct.toFixed(2)}%)</span>
+        </div>
+    `;
+    detailsEl.classList.remove('hidden');
+}
+
+async function validateConditionalBet(amount, statusEl, detailsEl) {
+    const config = HEDGE_CONFIG[currentCondType];
+    const hedgeSharesPerCell = amount;
+
+    // CAVEAT: We validate each leg independently against current market state.
+    // In real execution, earlier trades move the market before later trades execute.
+    // This validation confirms our AMM math is correct, but actual execution will
+    // see slightly different prices due to sequential market impact.
+
+    let rows = [];
+    let totalError = 0;
+    let totalShares = 0;
+
+    // Validate each hedge cell
+    for (const cellName of config.hedgeCells) {
+        const pool = marketProbabilities.pools[cellName];
+        const answerId = marketProbabilities.answerIds[cellName];
+
+        // Our estimate: cost to buy hedgeSharesPerCell shares
+        let localCost = 0;
+        if (pool && pool.YES && pool.NO) {
+            localCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
+        }
+
+        // API: We need to validate shares for a given cost, not cost for shares
+        // So let's validate the shares we'd get for our calculated cost
+        const apiResult = await placeBetDryRun(currentMarket.id, answerId, 'YES', localCost);
+        const apiShares = apiResult.shares || 0;
+
+        const error = Math.abs(hedgeSharesPerCell - apiShares);
+        totalError += error;
+        totalShares += hedgeSharesPerCell;
+
+        rows.push(`
+            <div class="validation-row">
+                <span class="label">Hedge ${cellName.replace('a_', '').replace('b_', '')}:</span>
+                <span class="value">${hedgeSharesPerCell.toFixed(1)} vs ${apiShares.toFixed(1)} shares</span>
+            </div>
+        `);
+    }
+
+    // Validate target
+    const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
+    const targetPool = marketProbabilities.pools[targetCell];
+    const targetAnswerId = marketProbabilities.answerIds[targetCell];
+
+    // Calculate target amount
+    let totalHedgeCost = 0;
+    for (const cellName of config.hedgeCells) {
+        const pool = marketProbabilities.pools[cellName];
+        if (pool && pool.YES && pool.NO) {
+            totalHedgeCost += costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
+        }
+    }
+    const targetAmount = Math.max(0, amount - totalHedgeCost);
+
+    let localTargetShares = 0;
+    if (targetPool && targetPool.YES && targetPool.NO && targetAmount > 0) {
+        localTargetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES');
+    }
+
+    const apiTargetResult = await placeBetDryRun(currentMarket.id, targetAnswerId, 'YES', targetAmount);
+    const apiTargetShares = apiTargetResult.shares || 0;
+
+    const targetError = Math.abs(localTargetShares - apiTargetShares);
+    totalError += targetError;
+    totalShares += localTargetShares;
+
+    rows.push(`
+        <div class="validation-row">
+            <span class="label">Target:</span>
+            <span class="value">${localTargetShares.toFixed(1)} vs ${apiTargetShares.toFixed(1)} shares</span>
+        </div>
+    `);
+
+    const errorPct = totalShares > 0 ? (totalError / totalShares * 100) : 0;
+    const isMatch = errorPct < 2;  // Within 2% for multi-leg
+
+    statusEl.textContent = isMatch ? '✓ validated' : '✗ mismatch';
+    statusEl.className = `validation-status ${isMatch ? 'valid' : 'invalid'}`;
+
+    detailsEl.innerHTML = rows.join('') + `
+        <div class="validation-row">
+            <span class="label">Total error:</span>
+            <span class="value ${isMatch ? 'match' : 'mismatch'}">${errorPct.toFixed(2)}%</span>
+        </div>
+        <div class="validation-row" style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary);">
+            <span>Note: Validates each leg vs current state. Actual execution sees sequential price changes.</span>
+        </div>
+    `;
+    detailsEl.classList.remove('hidden');
+}
+
+async function validateMarginalBet(amount, statusEl, detailsEl) {
+    const config = MARGINAL_CONFIG[currentMarginalType];
+    const perCellAmount = amount / config.cells.length;
+
+    // Same caveat as conditional: validates each leg independently.
+
+    let rows = [];
+    let totalError = 0;
+    let totalShares = 0;
+
+    for (const cellName of config.cells) {
+        const pool = marketProbabilities.pools[cellName];
+        const answerId = marketProbabilities.answerIds[cellName];
+
+        let localShares = 0;
+        if (pool && pool.YES && pool.NO) {
+            localShares = sharesForCost(pool.YES, pool.NO, perCellAmount, 'YES');
+        }
+
+        const apiResult = await placeBetDryRun(currentMarket.id, answerId, 'YES', perCellAmount);
+        const apiShares = apiResult.shares || 0;
+
+        const error = Math.abs(localShares - apiShares);
+        totalError += error;
+        totalShares += localShares;
+
+        rows.push(`
+            <div class="validation-row">
+                <span class="label">${cellName.replace('a_', '').replace('b_', '')}:</span>
+                <span class="value">${localShares.toFixed(1)} vs ${apiShares.toFixed(1)} shares</span>
+            </div>
+        `);
+    }
+
+    const errorPct = totalShares > 0 ? (totalError / totalShares * 100) : 0;
+    const isMatch = errorPct < 2;
+
+    statusEl.textContent = isMatch ? '✓ validated' : '✗ mismatch';
+    statusEl.className = `validation-status ${isMatch ? 'valid' : 'invalid'}`;
+
+    detailsEl.innerHTML = rows.join('') + `
+        <div class="validation-row">
+            <span class="label">Total error:</span>
+            <span class="value ${isMatch ? 'match' : 'mismatch'}">${errorPct.toFixed(2)}%</span>
+        </div>
+        <div class="validation-row" style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary);">
+            <span>Note: Validates each leg vs current state. Actual execution sees sequential price changes.</span>
+        </div>
+    `;
+    detailsEl.classList.remove('hidden');
+}
+
+async function placeBetDryRun(contractId, answerId, outcome, amount) {
+    const apiKey = apiKeyInput.value.trim();
+
+    const response = await fetch(`${API_BASE}/bet`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Key ${apiKey}`
+        },
+        body: JSON.stringify({
+            contractId,
+            answerId,
+            outcome,
+            amount,
+            dryRun: true
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API error ${response.status}: ${error}`);
+    }
+
+    return response.json();
 }
 
 async function executeDirectBet() {

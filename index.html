@@ -138,16 +138,20 @@
                     <div class="bet-input-row">
                         <label for="panel-bet-amount">Amount (M$):</label>
                         <input type="number" id="panel-bet-amount" min="1" value="10" step="1">
+                        <button id="panel-validate-btn" class="btn-secondary" title="Compare to API dry-run">Validate</button>
                         <button id="panel-execute-bet" class="btn-primary">Place Bet</button>
                     </div>
 
                     <div class="trade-preview" id="trade-preview">
-                        <h4>Trade Plan</h4>
+                        <h4>Trade Plan <span id="validation-status" class="validation-status"></span></h4>
                         <div class="trade-plan" id="trade-plan">
                             <!-- Trade steps will be inserted here -->
                         </div>
                         <div class="trade-summary" id="trade-summary">
                             <!-- Summary will be inserted here -->
+                        </div>
+                        <div id="validation-details" class="validation-details hidden">
+                            <!-- Validation results will be inserted here -->
                         </div>
                     </div>
                 </div>

@@ -516,6 +516,64 @@ button:disabled {
     font-weight: 600;
 }
 
+/* Validation UI */
+.validation-status {
+    font-size: 0.75rem;
+    font-weight: normal;
+    margin-left: 0.5rem;
+}
+
+.validation-status.valid {
+    color: var(--success);
+}
+
+.validation-status.invalid {
+    color: var(--error);
+}
+
+.validation-status.pending {
+    color: var(--text-secondary);
+}
+
+.validation-details {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.validation-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.2rem 0;
+}
+
+.validation-row .label {
+    color: var(--text-secondary);
+}
+
+.validation-row .value {
+    font-weight: 500;
+}
+
+.validation-row .value.match {
+    color: var(--success);
+}
+
+.validation-row .value.mismatch {
+    color: var(--error);
+}
+
+.btn-secondary {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--border);
+}
+
 /* Payout Matrix */
 .payout-matrix {
     margin-bottom: 1rem;
