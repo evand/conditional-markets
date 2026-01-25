@@ -1087,17 +1087,33 @@ function updateConditionalTradePreview() {
     // N = amount, so M$10 bet buys 10 shares of each hedge outcome.
     const hedgeSharesPerCell = amount;
 
-    // Calculate hedge cost using real AMM math: costForShares(y, n, shares, 'YES')
+    // SEQUENTIAL SIMULATION: Each trade moves the market, affecting later trades.
+    // We simulate this by updating pool state after each trade.
+    // Note: This doesn't account for multi-choice auto-arb (which reduces actual impact)
+    // but gives a more accurate estimate than treating trades as independent.
+
+    // Clone pools for simulation (don't modify original)
+    const simPools = {};
+    for (const cellName of [...config.hedgeCells, targetCell]) {
+        const pool = marketProbabilities.pools[cellName];
+        if (pool) {
+            simPools[cellName] = { YES: pool.YES, NO: pool.NO };
+        }
+    }
+
+    // Calculate hedge costs sequentially
     let totalHedgeCost = 0;
     const hedgeCellCosts = [];
     for (const cellName of config.hedgeCells) {
         const cellProb = marketProbabilities.joint[cellName];
-        const pool = marketProbabilities.pools[cellName];
+        const pool = simPools[cellName];
 
-        // Use AMM if pool available, otherwise naive estimate
         let cellCost;
         if (pool && pool.YES && pool.NO) {
             cellCost = costForShares(pool.YES, pool.NO, hedgeSharesPerCell, 'YES');
+            // Update simulated pool state after this trade
+            const newPool = poolAfterTrade(pool.YES, pool.NO, cellCost, 'YES');
+            simPools[cellName] = { YES: newPool.y, NO: newPool.n };
         } else {
             cellCost = hedgeSharesPerCell * cellProb;
         }
@@ -1107,9 +1123,9 @@ function updateConditionalTradePreview() {
     }
 
     const targetAmount = Math.max(0, amount - totalHedgeCost);
-    const targetPool = marketProbabilities.pools[targetCell];
+    const targetPool = simPools[targetCell];
 
-    // Calculate target shares using AMM
+    // Calculate target shares using simulated pool state
     let targetShares;
     if (targetPool && targetPool.YES && targetPool.NO && targetAmount > 0) {
         targetShares = sharesForCost(targetPool.YES, targetPool.NO, targetAmount, 'YES').toFixed(1);
