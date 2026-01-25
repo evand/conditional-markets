@@ -50,7 +50,21 @@ costForShares(y, n, shares, 'YES') = (shares - y - n + sqrt((y+n-shares)² + 4*s
 prob = n / (y + n)
 ```
 
+## Auto-Arb & Positions (2026-01-25)
+- Implemented Manifold's actual multi-choice YES buy algorithm
+  - Buy noShares NO in each OTHER (n-1) answer
+  - Redeem: noShares NO in (n-1) answers → noShares*(n-2) mana + noShares YES in target
+  - Binary search for noShares where Σp = 1
+- Position display (current shares in each cell)
+- M$1 minimum bet constraint warnings
+- Fixed artificial integer rounding bug (was rounding all bets to integers)
+
+## Alpha Release (2026-01-25)
+- Added alpha warning banner
+- Security review: localStorage for API key is reasonable, no XSS vectors
+- MIT license
+- Deployed to GitHub Pages
+
 ### Limitations
-- Validation tests legs independently (no sequential impact)
-- Sequential simulation doesn't account for multi-choice auto-arb
-- Full accuracy would require replicating Manifold's auto-arb logic
+- Limit orders not fully accounted for in validation
+- Sequential simulation matches Manifold well for markets without limit orders

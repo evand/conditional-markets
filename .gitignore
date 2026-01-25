@@ -1,6 +1,9 @@
 # Screenshots
 *.png
 
+# Logs
+*.log
+
 # OS
 .DS_Store
 *.swp

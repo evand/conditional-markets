@@ -29,6 +29,28 @@ body {
     line-height: 1.6;
 }
 
+.alpha-banner {
+    background: rgba(251, 191, 36, 0.1);
+    color: var(--warning);
+    border: 2px solid var(--warning);
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    margin: 1rem auto;
+    max-width: 800px;
+    text-align: center;
+    font-size: 0.9rem;
+}
+
+.alpha-banner strong {
+    font-weight: 700;
+}
+
+.alpha-banner em {
+    font-style: normal;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
 .container {
     max-width: 1000px;
     margin: 0 auto;

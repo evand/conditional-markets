@@ -1823,8 +1823,8 @@ function updateConditionalTradePreview() {
     // Add minimum bet warning if any leg is below M$1
     if (hasMinBetWarning) {
         // Calculate actual cost after rounding up
-        const actualHedgeCost = hedgeCellCosts.reduce((sum, h) => sum + Math.max(1, Math.round(h.cellCost)), 0);
-        const actualTargetCost = Math.max(1, Math.round(targetAmount));
+        const actualHedgeCost = hedgeCellCosts.reduce((sum, h) => sum + Math.max(1, h.cellCost), 0);
+        const actualTargetCost = Math.max(1, targetAmount);
         const actualTotal = actualHedgeCost + actualTargetCost;
 
         stepsHtml += `
@@ -1946,15 +1946,18 @@ async function executeConditionalBet() {
     // Calculate per-cell costs using sequential simulation with auto-arb
     let totalHedgeCost = 0;
     const hedgeBets = [];
+    console.log('Building hedgeBets from config.hedgeCells:', config.hedgeCells);
     for (const cellName of config.hedgeCells) {
+        console.log(`  Processing hedge cell: ${cellName}`);
         const result = multiChoiceCostForShares(simPools, cellName, hedgeSharesPerCell, 'YES');
-        const cellCost = Math.max(1, Math.round(result.cost));
+        const cellCost = Math.max(1, result.cost);
+        console.log(`    -> cost: ${cellCost}`);
         hedgeBets.push({ cellName, cellCost });
         simPools = result.newPools;  // Update state for next calculation
         totalHedgeCost += result.cost;
     }
 
-    const targetAmount = Math.max(1, Math.round(amount - totalHedgeCost));
+    const targetAmount = Math.max(1, amount - totalHedgeCost);
 
     // Get target based on direction
     const targetCell = currentBetDirection === 'yes' ? config.targetYes : config.targetNo;
@@ -1963,12 +1966,20 @@ async function executeConditionalBet() {
     executeBtn.disabled = true;
     executeBtn.textContent = 'Placing bets...';
 
+    // Debug: Log what we're about to execute
+    console.log('=== EXECUTION DEBUG ===');
+    console.log('currentCondType:', currentCondType);
+    console.log('config.hedgeCells:', config.hedgeCells);
+    console.log('hedgeBets:', JSON.stringify(hedgeBets, null, 2));
+    console.log('answerIds mapping:', JSON.stringify(marketProbabilities.answerIds, null, 2));
+
     try {
         const results = [];
 
         // Place hedge bets (each gets hedgeSharesPerCell shares worth)
         for (const { cellName, cellCost } of hedgeBets) {
             const answerId = marketProbabilities.answerIds[cellName];
+            console.log(`Placing hedge bet: cellName=${cellName}, answerId=${answerId}, cost=${cellCost}`);
             if (!answerId) throw new Error(`No answer ID for ${cellName}`);
 
             const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', cellCost);
@@ -2125,7 +2136,7 @@ async function executeMarginalBet() {
     if (!config) return;
 
     const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
-    const perCellAmount = Math.max(1, Math.round(amount / config.cells.length));
+    const perCellAmount = Math.max(1, amount / config.cells.length);
 
     const executeBtn = document.getElementById('panel-execute-bet');
     executeBtn.disabled = true;
@@ -2372,7 +2383,7 @@ async function executeBet() {
             }
 
             // Split hedge amount between the two hedge cells
-            const cellAmount = Math.max(1, Math.round(hedgeAmount / hedgeCells.length));
+            const cellAmount = Math.max(1, hedgeAmount / hedgeCells.length);
 
             const result = await placeBet(apiKey, currentMarket.id, answer.id, 'YES', cellAmount);
             results.push({ cell: cellName, type: 'hedge', result });
@@ -2384,7 +2395,7 @@ async function executeBet() {
             throw new Error(`Could not find answer for ${targetCell}`);
         }
 
-        const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswer.id, 'YES', Math.max(1, Math.round(targetAmount)));
+        const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswer.id, 'YES', Math.max(1, targetAmount));
         results.push({ cell: targetCell, type: 'target', result: targetResult });
 
         // Show success
