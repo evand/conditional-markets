@@ -50,14 +50,12 @@
         <section id="matrix-container" class="matrix-container hidden">
             <!-- Full confusion matrix with conditionals on edges -->
             <div class="full-matrix">
-                <!-- Top header row: empty corner, B labels, marginal header, conditional headers -->
                 <div class="matrix-grid">
                     <!-- Row 0: Headers -->
                     <div class="cell corner"></div>
                     <div class="cell col-header" id="col-header-b">B</div>
                     <div class="cell col-header" id="col-header-not-b">~B</div>
                     <div class="cell marginal-header">P(Row)</div>
-                    <div class="cell cond-header">P(A|·)</div>
 
                     <!-- Row 1: A row -->
                     <div class="cell row-header" id="row-header-a">A</div>
@@ -67,14 +65,8 @@
                     <div class="cell joint clickable" id="cell-a-not-b" data-cell="a_yes_b_no">
                         <span class="prob-value"></span>
                     </div>
-                    <div class="cell marginal" id="marginal-a">
+                    <div class="cell marginal clickable" id="marginal-a" data-marginal="a">
                         <span class="prob-value"></span>
-                    </div>
-                    <div class="cell conditional" id="cond-a-row">
-                        <span class="cond-label">P(A|B)</span>
-                        <span class="prob-value" id="cond-a-given-b"></span>
-                        <span class="cond-label secondary">P(A|~B)</span>
-                        <span class="prob-value secondary" id="cond-a-given-not-b"></span>
                     </div>
 
                     <!-- Row 2: ~A row -->
@@ -85,54 +77,45 @@
                     <div class="cell joint clickable" id="cell-not-a-not-b" data-cell="a_no_b_no">
                         <span class="prob-value"></span>
                     </div>
-                    <div class="cell marginal" id="marginal-not-a">
+                    <div class="cell marginal clickable" id="marginal-not-a" data-marginal="not_a">
                         <span class="prob-value"></span>
-                    </div>
-                    <div class="cell conditional dim" id="cond-not-a-row">
-                        <span class="cond-label">P(~A|B)</span>
-                        <span class="prob-value" id="cond-not-a-given-b"></span>
-                        <span class="cond-label secondary">P(~A|~B)</span>
-                        <span class="prob-value secondary" id="cond-not-a-given-not-b"></span>
                     </div>
 
                     <!-- Row 3: Column marginals -->
                     <div class="cell marginal-header">P(Col)</div>
-                    <div class="cell marginal" id="marginal-b">
+                    <div class="cell marginal clickable" id="marginal-b" data-marginal="b">
                         <span class="prob-value"></span>
                     </div>
-                    <div class="cell marginal" id="marginal-not-b">
+                    <div class="cell marginal clickable" id="marginal-not-b" data-marginal="not_b">
                         <span class="prob-value"></span>
                     </div>
                     <div class="cell total" id="total-sum">
                         <span class="prob-value">1.00</span>
                     </div>
-                    <div class="cell empty"></div>
+                </div>
+            </div>
 
-                    <!-- Row 4: Column conditionals P(B|·) -->
-                    <div class="cell cond-header">P(B|·)</div>
-                    <div class="cell conditional" id="cond-b-col">
-                        <span class="cond-label">P(B|A)</span>
-                        <span class="prob-value" id="cond-b-given-a"></span>
+            <!-- Conditionals section -->
+            <div class="conditionals-section">
+                <h3>Conditional Probabilities</h3>
+                <p class="conditionals-intro">Click to bet with automatic hedging (neutral on the condition)</p>
+                <div class="conditionals-grid">
+                    <div class="conditional-cell clickable" data-cond="a_given_b">
+                        <span class="cond-formula">P(A|B)</span>
+                        <span class="cond-value" id="cond-a-given-b">--</span>
                     </div>
-                    <div class="cell conditional dim">
-                        <span class="cond-label">P(~B|A)</span>
-                        <span class="prob-value" id="cond-not-b-given-a"></span>
+                    <div class="conditional-cell clickable" data-cond="a_given_not_b">
+                        <span class="cond-formula">P(A|~B)</span>
+                        <span class="cond-value" id="cond-a-given-not-b">--</span>
                     </div>
-                    <div class="cell empty"></div>
-                    <div class="cell empty"></div>
-
-                    <!-- Row 5: More column conditionals -->
-                    <div class="cell empty"></div>
-                    <div class="cell conditional" id="cond-b-not-a-col">
-                        <span class="cond-label">P(B|~A)</span>
-                        <span class="prob-value" id="cond-b-given-not-a"></span>
+                    <div class="conditional-cell clickable" data-cond="b_given_a">
+                        <span class="cond-formula">P(B|A)</span>
+                        <span class="cond-value" id="cond-b-given-a">--</span>
                     </div>
-                    <div class="cell conditional dim">
-                        <span class="cond-label">P(~B|~A)</span>
-                        <span class="prob-value" id="cond-not-b-given-not-a"></span>
+                    <div class="conditional-cell clickable" data-cond="b_given_not_a">
+                        <span class="cond-formula">P(B|~A)</span>
+                        <span class="cond-value" id="cond-b-given-not-a">--</span>
                     </div>
-                    <div class="cell empty"></div>
-                    <div class="cell empty"></div>
                 </div>
             </div>
 

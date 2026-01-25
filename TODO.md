@@ -24,3 +24,4 @@
 - [ ] Ternary market support (A/B/Other)
 - [ ] Bet history display
 - [ ] Multiple markets comparison view
+- [ ] Security audit: we're handling real API keys and using them. What should we be concerned about?

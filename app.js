@@ -108,14 +108,30 @@ function setupEventListeners() {
 
     // Bet panel handlers
     document.getElementById('close-bet-panel').addEventListener('click', closeBetPanel);
-    document.getElementById('panel-bet-amount').addEventListener('input', updateTradePreview);
-    document.getElementById('panel-execute-bet').addEventListener('click', executeDirectBet);
+    document.getElementById('panel-bet-amount').addEventListener('input', updatePanelPreview);
+    document.getElementById('panel-execute-bet').addEventListener('click', executePanelBet);
 
-    // Joint cell clicks for betting
+    // Joint cell clicks for direct betting
     document.querySelectorAll('.cell.joint').forEach(cell => {
         cell.addEventListener('click', () => {
             const cellType = cell.dataset.cell;
             if (cellType) openBetPanel(cellType, cell);
+        });
+    });
+
+    // Marginal cell clicks for multi-bet
+    document.querySelectorAll('.cell.marginal[data-marginal]').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const marginalType = cell.dataset.marginal;
+            if (marginalType) openMarginalBetPanel(marginalType, cell);
+        });
+    });
+
+    // Conditional cell clicks for hedged betting
+    document.querySelectorAll('.conditional-cell').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const condType = cell.dataset.cond;
+            if (condType) openConditionalBetPanel(condType, cell);
         });
     });
 }
@@ -411,24 +427,17 @@ function setMarginalProb(elementId, prob) {
 
 function displayConditionals(probs) {
     const c = probs.conditionals;
-    const m = probs.marginals;
 
-    // Primary conditionals
-    document.getElementById('cond-a-given-b').textContent = formatProb(c.a_given_b);
-    document.getElementById('cond-a-given-not-b').textContent = formatProb(c.a_given_not_b);
-    document.getElementById('cond-b-given-a').textContent = formatProb(c.b_given_a);
-    document.getElementById('cond-b-given-not-a').textContent = formatProb(c.b_given_not_a);
+    // Primary conditionals (new layout)
+    const aGivenB = document.getElementById('cond-a-given-b');
+    const aGivenNotB = document.getElementById('cond-a-given-not-b');
+    const bGivenA = document.getElementById('cond-b-given-a');
+    const bGivenNotA = document.getElementById('cond-b-given-not-a');
 
-    // Complement conditionals (P(~A|B) = 1 - P(A|B), etc.)
-    const notAGivenB = document.getElementById('cond-not-a-given-b');
-    const notAGivenNotB = document.getElementById('cond-not-a-given-not-b');
-    const notBGivenA = document.getElementById('cond-not-b-given-a');
-    const notBGivenNotA = document.getElementById('cond-not-b-given-not-a');
-
-    if (notAGivenB) notAGivenB.textContent = formatProb(1 - c.a_given_b);
-    if (notAGivenNotB) notAGivenNotB.textContent = formatProb(1 - c.a_given_not_b);
-    if (notBGivenA) notBGivenA.textContent = formatProb(1 - c.b_given_a);
-    if (notBGivenNotA) notBGivenNotA.textContent = formatProb(1 - c.b_given_not_a);
+    if (aGivenB) aGivenB.textContent = formatProb(c.a_given_b);
+    if (aGivenNotB) aGivenNotB.textContent = formatProb(c.a_given_not_b);
+    if (bGivenA) bGivenA.textContent = formatProb(c.b_given_a);
+    if (bGivenNotA) bGivenNotA.textContent = formatProb(c.b_given_not_a);
 
     // Derived statistics
     displayDerivedStats(probs);
@@ -485,8 +494,10 @@ let selectedCellType = null;
 function openBetPanel(cellType, cellElement) {
     if (!marketProbabilities) return;
 
-    // Clear previous selection
-    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    // Clear previous selection and modes
+    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+    currentCondType = null;
+    currentMarginalType = null;
 
     // Select new cell
     selectedCell = cellElement;
@@ -514,9 +525,32 @@ function openBetPanel(cellType, cellElement) {
 
 function closeBetPanel() {
     document.getElementById('bet-panel').classList.add('hidden');
-    document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
     selectedCell = null;
     selectedCellType = null;
+    currentCondType = null;
+    currentMarginalType = null;
+}
+
+// Unified handlers that dispatch based on current mode
+function updatePanelPreview() {
+    if (currentCondType) {
+        updateConditionalTradePreview();
+    } else if (currentMarginalType) {
+        updateMarginalTradePreview();
+    } else {
+        updateTradePreview();
+    }
+}
+
+async function executePanelBet() {
+    if (currentCondType) {
+        await executeConditionalBet();
+    } else if (currentMarginalType) {
+        await executeMarginalBet();
+    } else {
+        await executeDirectBet();
+    }
 }
 
 function updateTradePreview() {
@@ -563,6 +597,273 @@ async function executeDirectBet() {
         showResultDialog('Bet Placed', `Bought ${result.shares?.toFixed(2) || '?'} shares for M$${result.amount?.toFixed(2) || amount}`, false);
         closeBetPanel();
         // Refresh market data
+        await loadMarket(currentMarketConfig);
+    } catch (error) {
+        showError(`Bet failed: ${error.message}`);
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.textContent = 'Place Bet';
+    }
+}
+
+// Conditional Betting (with hedging)
+let currentCondType = null;
+
+// Hedge configurations for each conditional bet type
+const HEDGE_CONFIG = {
+    'a_given_b': {
+        // To bet on P(A|B): hedge with ~B outcomes, target A&B
+        hedgeCells: ['a_yes_b_no', 'a_no_b_no'],  // ~B outcomes
+        targetCell: 'a_yes_b_yes',                 // A&B
+        hedgeMarginal: 'pNotB',
+        description: (cfg) => `Bet on ${cfg.labelA} conditional on ${cfg.labelB} happening`
+    },
+    'a_given_not_b': {
+        // To bet on P(A|~B): hedge with B outcomes, target A&~B
+        hedgeCells: ['a_yes_b_yes', 'a_no_b_yes'],  // B outcomes
+        targetCell: 'a_yes_b_no',                   // A&~B
+        hedgeMarginal: 'pB',
+        description: (cfg) => `Bet on ${cfg.labelA} conditional on ${cfg.labelB} NOT happening`
+    },
+    'b_given_a': {
+        // To bet on P(B|A): hedge with ~A outcomes, target A&B
+        hedgeCells: ['a_no_b_yes', 'a_no_b_no'],   // ~A outcomes
+        targetCell: 'a_yes_b_yes',                  // A&B
+        hedgeMarginal: 'pNotA',
+        description: (cfg) => `Bet on ${cfg.labelB} conditional on ${cfg.labelA} happening`
+    },
+    'b_given_not_a': {
+        // To bet on P(B|~A): hedge with A outcomes, target ~A&B
+        hedgeCells: ['a_yes_b_yes', 'a_yes_b_no'],  // A outcomes
+        targetCell: 'a_no_b_yes',                   // ~A&B
+        hedgeMarginal: 'pA',
+        description: (cfg) => `Bet on ${cfg.labelB} conditional on ${cfg.labelA} NOT happening`
+    }
+};
+
+function openConditionalBetPanel(condType, cellElement) {
+    if (!marketProbabilities) return;
+
+    const config = HEDGE_CONFIG[condType];
+    if (!config) return;
+
+    // Clear previous selection
+    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+
+    // Select new cell
+    selectedCell = cellElement;
+    currentCondType = condType;
+    cellElement.classList.add('selected');
+
+    // Get conditional probability
+    const condProb = marketProbabilities.conditionals[condType];
+    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
+
+    document.getElementById('bet-panel-title').textContent = `Conditional Bet: P(${condType.replace('_given_', '|').replace('_', '~').toUpperCase()})`;
+    document.getElementById('bet-panel-description').textContent = config.description(currentMarketConfig);
+
+    updateConditionalTradePreview();
+    document.getElementById('bet-panel').classList.remove('hidden');
+}
+
+function updateConditionalTradePreview() {
+    if (!currentCondType || !marketProbabilities) {
+        updateTradePreview();  // Fall back to direct bet preview
+        return;
+    }
+
+    const config = HEDGE_CONFIG[currentCondType];
+    if (!config) return;
+
+    const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
+    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
+    const targetProb = marketProbabilities.joint[config.targetCell];
+
+    // Split: hedgeAmount proportional to hedge cost, rest to target
+    const hedgeAmount = amount * hedgeCost;
+    const targetAmount = amount - hedgeAmount;
+    const estimatedShares = targetProb > 0 ? (targetAmount / targetProb).toFixed(1) : '?';
+
+    const hedgeLabel = config.hedgeCells.map(c =>
+        currentMarketConfig.truthTable?.[c]?.substring(0, 20) + '...' || c
+    ).join(' + ');
+
+    document.getElementById('preview-buy').innerHTML = `
+        <div>Hedge (~${(hedgeCost * 100).toFixed(0)}%): M$${hedgeAmount.toFixed(2)}</div>
+        <div>Target: M$${targetAmount.toFixed(2)}</div>
+    `;
+    document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)} total`;
+    document.getElementById('preview-shares').textContent = `~${estimatedShares} target shares`;
+}
+
+async function executeConditionalBet() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        showError('Please enter your Manifold API key to place bets');
+        return;
+    }
+
+    if (!currentCondType || !marketProbabilities) {
+        showError('No conditional selected');
+        return;
+    }
+
+    const config = HEDGE_CONFIG[currentCondType];
+    if (!config) return;
+
+    const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
+    const hedgeCost = marketProbabilities.marginals[config.hedgeMarginal];
+    const hedgeAmount = amount * hedgeCost;
+    const targetAmount = amount - hedgeAmount;
+
+    const executeBtn = document.getElementById('panel-execute-bet');
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Placing bets...';
+
+    try {
+        const results = [];
+
+        // Place hedge bets (split evenly between hedge cells)
+        const perHedgeAmount = Math.max(1, Math.round(hedgeAmount / config.hedgeCells.length));
+        for (const cellName of config.hedgeCells) {
+            const answerId = marketProbabilities.answerIds[cellName];
+            if (!answerId) throw new Error(`No answer ID for ${cellName}`);
+
+            const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', perHedgeAmount);
+            results.push({ type: 'hedge', cell: cellName, result });
+        }
+
+        // Place target bet
+        const targetAnswerId = marketProbabilities.answerIds[config.targetCell];
+        if (!targetAnswerId) throw new Error(`No answer ID for target ${config.targetCell}`);
+
+        const targetResult = await placeBet(apiKey, currentMarket.id, targetAnswerId, 'YES', Math.max(1, Math.round(targetAmount)));
+        results.push({ type: 'target', cell: config.targetCell, result: targetResult });
+
+        // Show success
+        const totalSpent = results.reduce((sum, r) => sum + (r.result.amount || 0), 0);
+        showResultDialog('Conditional Bet Placed',
+            `Placed ${results.length} bets totaling M$${totalSpent.toFixed(2)}`, false);
+        closeBetPanel();
+        currentCondType = null;
+
+        // Refresh market data
+        await loadMarket(currentMarketConfig);
+    } catch (error) {
+        showError(`Bet failed: ${error.message}`);
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.textContent = 'Place Bet';
+    }
+}
+
+// Marginal Betting (bet on whole row/column)
+const MARGINAL_CONFIG = {
+    'a': {
+        cells: ['a_yes_b_yes', 'a_yes_b_no'],
+        description: (cfg) => `Bet on ${cfg.labelA} (both ${cfg.labelB} and ~${cfg.labelB})`
+    },
+    'not_a': {
+        cells: ['a_no_b_yes', 'a_no_b_no'],
+        description: (cfg) => `Bet on ~${cfg.labelA} (both ${cfg.labelB} and ~${cfg.labelB})`
+    },
+    'b': {
+        cells: ['a_yes_b_yes', 'a_no_b_yes'],
+        description: (cfg) => `Bet on ${cfg.labelB} (both ${cfg.labelA} and ~${cfg.labelA})`
+    },
+    'not_b': {
+        cells: ['a_yes_b_no', 'a_no_b_no'],
+        description: (cfg) => `Bet on ~${cfg.labelB} (both ${cfg.labelA} and ~${cfg.labelA})`
+    }
+};
+
+let currentMarginalType = null;
+
+function openMarginalBetPanel(marginalType, cellElement) {
+    if (!marketProbabilities) return;
+
+    const config = MARGINAL_CONFIG[marginalType];
+    if (!config) return;
+
+    // Clear previous selection
+    document.querySelectorAll('.cell.selected, .conditional-cell.selected').forEach(c => c.classList.remove('selected'));
+
+    selectedCell = cellElement;
+    currentMarginalType = marginalType;
+    currentCondType = null;  // Clear conditional mode
+    cellElement.classList.add('selected');
+
+    // Get marginal probability
+    const marginalKey = 'p' + marginalType.charAt(0).toUpperCase() + marginalType.slice(1).replace('_', '');
+    const marginalProb = marketProbabilities.marginals[marginalKey] ||
+        config.cells.reduce((sum, c) => sum + marketProbabilities.joint[c], 0);
+
+    document.getElementById('bet-panel-title').textContent = `Marginal Bet: P(${marginalType.replace('not_', '~').toUpperCase()})`;
+    document.getElementById('bet-panel-description').textContent = config.description(currentMarketConfig);
+
+    updateMarginalTradePreview();
+    document.getElementById('bet-panel').classList.remove('hidden');
+}
+
+function updateMarginalTradePreview() {
+    if (!currentMarginalType || !marketProbabilities) return;
+
+    const config = MARGINAL_CONFIG[currentMarginalType];
+    if (!config) return;
+
+    const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
+    const perCellAmount = amount / config.cells.length;
+
+    const cellLabels = config.cells.map(c =>
+        currentMarketConfig.truthTable?.[c]?.substring(0, 25) || c
+    );
+
+    document.getElementById('preview-buy').innerHTML = cellLabels.map(label =>
+        `<div>• ${label}: M$${perCellAmount.toFixed(2)}</div>`
+    ).join('');
+    document.getElementById('preview-cost').textContent = `M$${amount.toFixed(2)} total`;
+    document.getElementById('preview-shares').textContent = `Split across ${config.cells.length} outcomes`;
+}
+
+async function executeMarginalBet() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        showError('Please enter your Manifold API key to place bets');
+        return;
+    }
+
+    if (!currentMarginalType || !marketProbabilities) {
+        showError('No marginal selected');
+        return;
+    }
+
+    const config = MARGINAL_CONFIG[currentMarginalType];
+    if (!config) return;
+
+    const amount = parseFloat(document.getElementById('panel-bet-amount').value) || 10;
+    const perCellAmount = Math.max(1, Math.round(amount / config.cells.length));
+
+    const executeBtn = document.getElementById('panel-execute-bet');
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Placing bets...';
+
+    try {
+        const results = [];
+
+        for (const cellName of config.cells) {
+            const answerId = marketProbabilities.answerIds[cellName];
+            if (!answerId) throw new Error(`No answer ID for ${cellName}`);
+
+            const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', perCellAmount);
+            results.push({ cell: cellName, result });
+        }
+
+        const totalSpent = results.reduce((sum, r) => sum + (r.result.amount || 0), 0);
+        showResultDialog('Marginal Bet Placed',
+            `Placed ${results.length} bets totaling M$${totalSpent.toFixed(2)}`, false);
+        closeBetPanel();
+        currentMarginalType = null;
+
         await loadMarket(currentMarketConfig);
     } catch (error) {
         showError(`Bet failed: ${error.message}`);

@@ -197,9 +197,9 @@ button:disabled {
 
 .matrix-grid {
     display: grid;
-    grid-template-columns: 100px repeat(2, 1fr) 80px 140px;
+    grid-template-columns: 100px repeat(2, 1fr) 80px;
     gap: 2px;
-    min-width: 600px;
+    min-width: 400px;
 }
 
 .cell {
@@ -257,6 +257,17 @@ button:disabled {
 
 .cell.marginal {
     background: var(--bg-tertiary);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.cell.marginal:hover {
+    background: var(--cell-hover);
+}
+
+.cell.marginal.selected {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
 }
 
 .cell.marginal .prob-value {
@@ -275,33 +286,62 @@ button:disabled {
     color: var(--success);
 }
 
-.cell.conditional {
+/* Conditionals Section */
+.conditionals-section {
     background: var(--bg-secondary);
-    border-left: 2px solid var(--accent);
+    border-radius: 8px;
+    padding: 1.5rem;
 }
 
-.cell.conditional.dim {
-    border-left-color: var(--border);
-    opacity: 0.6;
+.conditionals-section h3 {
+    color: var(--accent);
+    margin-bottom: 0.5rem;
 }
 
-.cell.conditional .cond-label {
-    font-size: 0.7rem;
+.conditionals-intro {
     color: var(--text-secondary);
-    margin-bottom: 2px;
-}
-
-.cell.conditional .cond-label.secondary {
-    margin-top: 6px;
-}
-
-.cell.conditional .prob-value {
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.cell.conditional .prob-value.secondary {
     font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.conditionals-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+
+.conditional-cell {
+    background: var(--bg-tertiary);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.conditional-cell:hover {
+    border-color: var(--accent);
+    background: var(--cell-hover);
+}
+
+.conditional-cell.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.3);
+}
+
+.conditional-cell .cond-formula {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.conditional-cell .cond-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-primary);
 }
 
 /* Probability color coding */
@@ -607,7 +647,7 @@ button:disabled {
     }
 
     .matrix-grid {
-        grid-template-columns: 80px repeat(2, 1fr) 60px 100px;
+        grid-template-columns: 80px repeat(2, 1fr) 60px;
         font-size: 0.85rem;
     }
 
@@ -615,7 +655,7 @@ button:disabled {
         font-size: 1.2rem;
     }
 
-    .bet-buttons,
+    .conditionals-grid,
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
     }
