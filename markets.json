@@ -1,0 +1,74 @@
+[
+  {
+    "name": "AGI / Python 4",
+    "slug": "agi-before-2028-python-4-before-203",
+    "labelA": "AGI",
+    "labelB": "Python 4",
+    "truthTable": {
+      "a_yes_b_yes": "AGI // Python 4",
+      "a_yes_b_no": "AGI // No Python 4",
+      "a_no_b_yes": "No AGI // Python 4",
+      "a_no_b_no": "No AGI // No Python 4"
+    }
+  },
+  {
+    "name": "Artemis III / China Moon",
+    "slug": "artemis-iii-flown-with-a-crewed-lan",
+    "labelA": "Artemis III",
+    "labelB": "China first",
+    "truthTable": {
+      "a_yes_b_yes": "Artemis III flown with a crewed landing AND China lands a person on the Moon first",
+      "a_yes_b_no": "Artemis III flown with a crewed landing AND The US returns to the Moon first",
+      "a_no_b_yes": "Artemis III not flown with a crewed landing AND China lands a person on the Moon first",
+      "a_no_b_no": "Artemis III not flown with a crewed landing AND The US returns to the Moon first"
+    }
+  },
+  {
+    "name": "Trump Peace / Nobel",
+    "slug": "will-trump-win-the-2026-nobel-peace",
+    "labelA": "Peace",
+    "labelB": "Nobel",
+    "truthTable": {
+      "a_yes_b_yes": "Peace and Nobel",
+      "a_yes_b_no": "Peace but no Nobel",
+      "a_no_b_no": "No peace, no Nobel",
+      "a_no_b_yes": "No peace, Nobel anyway"
+    }
+  },
+  {
+    "name": "Newsom Nominee / Wins",
+    "slug": "will-gavin-newsom-be-the-nominee-an",
+    "labelA": "Nominee",
+    "labelB": "Wins",
+    "truthTable": {
+      "a_yes_b_no": "Is nominee, doesn't win",
+      "a_yes_b_yes": "Is nominee, does win",
+      "a_no_b_no": "Is not nominee, doesn't win",
+      "a_no_b_yes": "Is not nominee, does win"
+    }
+  },
+  {
+    "name": "Iran Strikes / Regime Falls",
+    "slug": "will-a-foreign-military-strike-iran",
+    "labelA": "Strikes",
+    "labelB": "Regime falls",
+    "truthTable": {
+      "a_no_b_no": "No strikes, regime stays",
+      "a_no_b_yes": "No strikes, regime falls",
+      "a_yes_b_no": "Strikes, regime stays",
+      "a_yes_b_yes": "Strikes, regime falls"
+    }
+  },
+  {
+    "name": "Aella Cavities / Lantern Bioworks",
+    "slug": "conditional-on-aella-getting-new-ca",
+    "labelA": "Cavities",
+    "labelB": "10k+ treated",
+    "truthTable": {
+      "a_yes_b_yes": "Aella gets new cavities; >= 10000 people get treatment",
+      "a_yes_b_no": "Aella gets new cavities; < 10000 people get treatment",
+      "a_no_b_yes": "Aella does not get new cavities; >= 10000 people get treatment",
+      "a_no_b_no": "Aella does not get new cavities; < 10000 people get treatment"
+    }
+  }
+]

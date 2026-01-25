@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conditional Markets Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Conditional Markets Viewer</h1>
+            <p class="subtitle">View and bet on joint probability markets</p>
+        </header>
+
+        <section class="controls">
+            <div class="control-group">
+                <label for="market-select">Select Market:</label>
+                <select id="market-select">
+                    <option value="">-- Choose a market --</option>
+                </select>
+                <button id="refresh-btn" title="Refresh market data">Refresh</button>
+            </div>
+
+            <div class="control-group api-key-group">
+                <label for="api-key">API Key:</label>
+                <div class="api-key-input">
+                    <input type="password" id="api-key" placeholder="Enter Manifold API key for betting">
+                    <button id="toggle-key-visibility" title="Show/hide key">Show</button>
+                    <button id="clear-key" title="Clear saved key">Clear</button>
+                </div>
+                <span class="api-key-status" id="api-key-status"></span>
+            </div>
+        </section>
+
+        <section id="market-info" class="market-info hidden">
+            <h2 id="market-title"></h2>
+            <a id="market-link" href="#" target="_blank">View on Manifold</a>
+        </section>
+
+        <section id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Loading market data...</p>
+        </section>
+
+        <section id="error" class="error hidden">
+            <p id="error-message"></p>
+        </section>
+
+        <section id="matrix-container" class="matrix-container hidden">
+            <!-- Full confusion matrix with conditionals on edges -->
+            <div class="full-matrix">
+                <!-- Top header row: empty corner, B labels, marginal header, conditional headers -->
+                <div class="matrix-grid">
+                    <!-- Row 0: Headers -->
+                    <div class="cell corner"></div>
+                    <div class="cell col-header" id="col-header-b">B</div>
+                    <div class="cell col-header" id="col-header-not-b">~B</div>
+                    <div class="cell marginal-header">P(Row)</div>
+                    <div class="cell cond-header">P(A|·)</div>
+
+                    <!-- Row 1: A row -->
+                    <div class="cell row-header" id="row-header-a">A</div>
+                    <div class="cell joint clickable" id="cell-a-b" data-cell="a_yes_b_yes">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell joint clickable" id="cell-a-not-b" data-cell="a_yes_b_no">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell marginal" id="marginal-a">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell conditional" id="cond-a-row">
+                        <span class="cond-label">P(A|B)</span>
+                        <span class="prob-value" id="cond-a-given-b"></span>
+                        <span class="cond-label secondary">P(A|~B)</span>
+                        <span class="prob-value secondary" id="cond-a-given-not-b"></span>
+                    </div>
+
+                    <!-- Row 2: ~A row -->
+                    <div class="cell row-header" id="row-header-not-a">~A</div>
+                    <div class="cell joint clickable" id="cell-not-a-b" data-cell="a_no_b_yes">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell joint clickable" id="cell-not-a-not-b" data-cell="a_no_b_no">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell marginal" id="marginal-not-a">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell conditional dim" id="cond-not-a-row">
+                        <span class="cond-label">P(~A|B)</span>
+                        <span class="prob-value" id="cond-not-a-given-b"></span>
+                        <span class="cond-label secondary">P(~A|~B)</span>
+                        <span class="prob-value secondary" id="cond-not-a-given-not-b"></span>
+                    </div>
+
+                    <!-- Row 3: Column marginals -->
+                    <div class="cell marginal-header">P(Col)</div>
+                    <div class="cell marginal" id="marginal-b">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell marginal" id="marginal-not-b">
+                        <span class="prob-value"></span>
+                    </div>
+                    <div class="cell total" id="total-sum">
+                        <span class="prob-value">1.00</span>
+                    </div>
+                    <div class="cell empty"></div>
+
+                    <!-- Row 4: Column conditionals P(B|·) -->
+                    <div class="cell cond-header">P(B|·)</div>
+                    <div class="cell conditional" id="cond-b-col">
+                        <span class="cond-label">P(B|A)</span>
+                        <span class="prob-value" id="cond-b-given-a"></span>
+                    </div>
+                    <div class="cell conditional dim">
+                        <span class="cond-label">P(~B|A)</span>
+                        <span class="prob-value" id="cond-not-b-given-a"></span>
+                    </div>
+                    <div class="cell empty"></div>
+                    <div class="cell empty"></div>
+
+                    <!-- Row 5: More column conditionals -->
+                    <div class="cell empty"></div>
+                    <div class="cell conditional" id="cond-b-not-a-col">
+                        <span class="cond-label">P(B|~A)</span>
+                        <span class="prob-value" id="cond-b-given-not-a"></span>
+                    </div>
+                    <div class="cell conditional dim">
+                        <span class="cond-label">P(~B|~A)</span>
+                        <span class="prob-value" id="cond-not-b-given-not-a"></span>
+                    </div>
+                    <div class="cell empty"></div>
+                    <div class="cell empty"></div>
+                </div>
+            </div>
+
+            <!-- Inline bet panel (shows when cell is clicked) -->
+            <div id="bet-panel" class="bet-panel hidden">
+                <div class="bet-panel-header">
+                    <h3 id="bet-panel-title">Bet on Cell</h3>
+                    <button class="close-panel-btn" id="close-bet-panel">&times;</button>
+                </div>
+                <div class="bet-panel-body">
+                    <p id="bet-panel-description"></p>
+
+                    <div class="bet-input-row">
+                        <label for="panel-bet-amount">Amount (M$):</label>
+                        <input type="number" id="panel-bet-amount" min="1" value="10" step="1">
+                        <button id="panel-execute-bet" class="btn-primary">Place Bet</button>
+                    </div>
+
+                    <div class="trade-preview" id="trade-preview">
+                        <div class="preview-row">
+                            <span class="preview-label">Buy:</span>
+                            <span class="preview-value" id="preview-buy"></span>
+                        </div>
+                        <div class="preview-row">
+                            <span class="preview-label">Cost:</span>
+                            <span class="preview-value" id="preview-cost"></span>
+                        </div>
+                        <div class="preview-row">
+                            <span class="preview-label">Shares:</span>
+                            <span class="preview-value" id="preview-shares"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Derived stats -->
+            <div class="stats-section">
+                <h3>Derived Statistics</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">Correlation (A,B)</span>
+                        <span class="stat-value" id="stat-correlation">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Lift P(A|B)/P(A)</span>
+                        <span class="stat-value" id="stat-lift-a">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Lift P(B|A)/P(B)</span>
+                        <span class="stat-value" id="stat-lift-b">--</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Odds Ratio</span>
+                        <span class="stat-value" id="stat-odds-ratio">--</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Bet Dialog -->
+        <div id="bet-dialog" class="dialog-overlay hidden">
+            <div class="dialog">
+                <div class="dialog-header">
+                    <h3 id="bet-dialog-title">Conditional Bet</h3>
+                    <button class="close-btn" id="close-bet-dialog">&times;</button>
+                </div>
+                <div class="dialog-body">
+                    <p id="bet-description"></p>
+
+                    <div class="bet-input-group">
+                        <label for="bet-amount">Total Amount (M$):</label>
+                        <input type="number" id="bet-amount" min="1" value="10" step="1">
+                    </div>
+
+                    <div class="hedge-preview" id="hedge-preview">
+                        <h4>Hedge Strategy Preview</h4>
+                        <div class="hedge-details" id="hedge-details"></div>
+                    </div>
+
+                    <div class="payout-preview" id="payout-preview">
+                        <h4>Expected Payouts</h4>
+                        <div class="payout-scenarios" id="payout-scenarios"></div>
+                    </div>
+                </div>
+                <div class="dialog-footer">
+                    <button id="cancel-bet" class="btn-secondary">Cancel</button>
+                    <button id="execute-bet" class="btn-primary">Place Bet</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bet Result Dialog -->
+        <div id="result-dialog" class="dialog-overlay hidden">
+            <div class="dialog">
+                <div class="dialog-header">
+                    <h3 id="result-dialog-title">Bet Result</h3>
+                    <button class="close-btn" id="close-result-dialog">&times;</button>
+                </div>
+                <div class="dialog-body">
+                    <div id="result-content"></div>
+                </div>
+                <div class="dialog-footer">
+                    <button id="close-result" class="btn-primary">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
