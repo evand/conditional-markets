@@ -190,29 +190,5 @@
       "a_no_b_yes": "No AI movies by early 2028 & NVDA above $400 at EOY 2027",
       "a_no_b_no": "No AI movies by early 2028 & NVDA below $400 at EOY 2027"
     }
-  },
-  {
-    "name": "Mamdani / NYC Murder Rate",
-    "slug": "will-mamdani-win-x-will-the-murder",
-    "labelA": "Mamdani wins",
-    "labelB": "Murder rate up",
-    "truthTable": {
-      "a_yes_b_yes": "Mamdani wins + Murder rate increases",
-      "a_yes_b_no": "Mamdani wins + Murder rate decreases",
-      "a_no_b_yes": "Mamdani loses + Murder rate increases",
-      "a_no_b_no": "Mamdani loses + Murder rate decreases"
-    }
-  },
-  {
-    "name": "Slot / Amorim EPL",
-    "slug": "will-arne-slotruben-amorim-manage-l",
-    "labelA": "Slot stays",
-    "labelB": "Amorim stays",
-    "truthTable": {
-      "a_yes_b_yes": "Both",
-      "a_yes_b_no": "Only Slot",
-      "a_no_b_yes": "Only Amorim",
-      "a_no_b_no": "Neither"
-    }
   }
 ]
