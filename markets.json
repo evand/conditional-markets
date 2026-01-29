@@ -142,5 +142,77 @@
       "a_no_b_yes": "California or New York, but not Texas",
       "a_no_b_no": "None of Texas, California, and New York"
     }
+  },
+  {
+    "name": "Ohio Senator / 4+ Dem Reps",
+    "slug": "will-oh-elect-a-democratic-senator",
+    "labelA": "Dem Senator",
+    "labelB": "\u22654 Dem Reps",
+    "truthTable": {
+      "a_yes_b_yes": "Dem Senator, >= 4 Dem Reps",
+      "a_yes_b_no": "Dem Senator, < 4 Dem Reps",
+      "a_no_b_yes": "Non-Dem Senator, >= 4 Dem Reps",
+      "a_no_b_no": "Non-Dem Senator, < 4 Dem Reps"
+    }
+  },
+  {
+    "name": "China Taiwan Invasion / Moon",
+    "slug": "china-invades-taiwan-vs-china-lands",
+    "labelA": "Invades Taiwan",
+    "labelB": "Moon landing",
+    "truthTable": {
+      "a_yes_b_yes": "China invades Taiwan ; China lands on the Moon",
+      "a_yes_b_no": "China invades Taiwan ; China doesn't land on the Moon",
+      "a_no_b_yes": "China doesn't invade Taiwan ; China lands on the Moon",
+      "a_no_b_no": "China doesn't invade Taiwan ; China doesn't land on the Moon"
+    }
+  },
+  {
+    "name": "2028 Woman Nominees",
+    "slug": "which-major-parties-will-nominate-a",
+    "labelA": "Dem woman",
+    "labelB": "Rep woman",
+    "truthTable": {
+      "a_yes_b_yes": "Both",
+      "a_yes_b_no": "Democratic only",
+      "a_no_b_yes": "Republican only",
+      "a_no_b_no": "Neither"
+    }
+  },
+  {
+    "name": "AI Movies / NVDA Price",
+    "slug": "ai-movies-2028-x-nvda-400",
+    "labelA": "AI movies 2028",
+    "labelB": "NVDA >$400",
+    "truthTable": {
+      "a_yes_b_yes": "AI movies by early 2028 & NVDA above $400 at EOY 2027",
+      "a_yes_b_no": "AI movies by early 2028 & NVDA below $400 at EOY 2027",
+      "a_no_b_yes": "No AI movies by early 2028 & NVDA above $400 at EOY 2027",
+      "a_no_b_no": "No AI movies by early 2028 & NVDA below $400 at EOY 2027"
+    }
+  },
+  {
+    "name": "Mamdani / NYC Murder Rate",
+    "slug": "will-mamdani-win-x-will-the-murder",
+    "labelA": "Mamdani wins",
+    "labelB": "Murder rate up",
+    "truthTable": {
+      "a_yes_b_yes": "Mamdani wins + Murder rate increases",
+      "a_yes_b_no": "Mamdani wins + Murder rate decreases",
+      "a_no_b_yes": "Mamdani loses + Murder rate increases",
+      "a_no_b_no": "Mamdani loses + Murder rate decreases"
+    }
+  },
+  {
+    "name": "Slot / Amorim EPL",
+    "slug": "will-arne-slotruben-amorim-manage-l",
+    "labelA": "Slot stays",
+    "labelB": "Amorim stays",
+    "truthTable": {
+      "a_yes_b_yes": "Both",
+      "a_yes_b_no": "Only Slot",
+      "a_no_b_yes": "Only Amorim",
+      "a_no_b_no": "Neither"
+    }
   }
 ]
