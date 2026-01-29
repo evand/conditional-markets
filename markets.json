@@ -96,18 +96,6 @@
     }
   },
   {
-    "name": "Russia Nuke / Coup",
-    "slug": "russia-coupnuke-combination-market",
-    "labelA": "Nuke Ukraine",
-    "labelB": "Coup success",
-    "truthTable": {
-      "a_yes_b_yes": "Yes nuke Ukraine, Yes coup success",
-      "a_yes_b_no": "Yes nuke Ukraine, No coup success",
-      "a_no_b_yes": "No nuke Ukraine, Yes coup success",
-      "a_no_b_no": "No nuke Ukraine, No coup success"
-    }
-  },
-  {
     "name": "Messi / Ronaldo 1000 Goals",
     "slug": "will-messi-and-ronaldo-both-reach-1",
     "labelA": "Messi 1000",
