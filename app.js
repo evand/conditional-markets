@@ -706,6 +706,35 @@ function setupEventListeners() {
             if (condType) openConditionalBetPanel(condType, cell);
         });
     });
+
+    // Correlation betting panel
+    document.getElementById('correlation-toggle').addEventListener('click', () => {
+        const content = document.getElementById('correlation-content');
+        const toggle = document.getElementById('correlation-toggle');
+        content.classList.toggle('collapsed');
+        toggle.textContent = content.classList.contains('collapsed') ? '▶' : '▼';
+    });
+
+    document.getElementById('correlation-header').addEventListener('click', (e) => {
+        // Only toggle if clicking the header itself, not the button
+        if (e.target.id !== 'correlation-toggle') {
+            document.getElementById('correlation-toggle').click();
+        }
+    });
+
+    document.querySelectorAll('.corr-direction-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.corr-direction-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            correlationDirection = btn.dataset.direction;
+            updateCorrelationBetPanel();
+        });
+    });
+
+    document.getElementById('corr-calculate').addEventListener('click', updateCorrelationBetPanel);
+    document.getElementById('corr-scale').addEventListener('change', updateCorrelationBetPanel);
+    document.getElementById('corr-validate-btn').addEventListener('click', validateCorrelationBet);
+    document.getElementById('corr-execute-btn').addEventListener('click', executeCorrelationBet);
 }
 
 async function onMarketSelect(event) {
@@ -1133,6 +1162,593 @@ function displayDerivedStats(probs) {
     const orEl = document.getElementById('stat-odds-ratio');
     orEl.textContent = oddsRatio === Infinity ? '∞' : oddsRatio.toFixed(2);
     orEl.className = 'stat-value ' + (oddsRatio > 1.5 ? 'positive' : oddsRatio < 0.67 ? 'negative' : 'neutral');
+}
+
+// =============================================================================
+// Correlation Betting
+// =============================================================================
+
+let correlationDirection = 'long';
+let currentCorrelationAnalysis = null;
+
+/**
+ * Compute neutral correlation weights for a 2x2 joint market.
+ *
+ * Neutrality constraints form a 2×4 matrix C where C·s = 0.
+ * The null space is 2D: (1,1,1,1) is trivial cash, the other is the betting direction.
+ *
+ * We solve by setting s₁=1 (A∧B), s₄=0 (¬A∧¬B), then solve for s₂, s₃.
+ * This gives the long-correlation direction (profits when diagonal outcomes happen).
+ *
+ * @param {Object} probs - Joint probabilities {a_yes_b_yes, a_yes_b_no, a_no_b_yes, a_no_b_no}
+ * @returns {Object} {s1, s2, s3, s4} - Unnormalized weights for long correlation
+ */
+function computeNeutralCorrelationWeights(probs) {
+    const p11 = probs.a_yes_b_yes;
+    const p12 = probs.a_yes_b_no;
+    const p21 = probs.a_no_b_yes;
+    const p22 = probs.a_no_b_no;
+
+    // Marginals
+    const pA = p11 + p12;
+    const pB = p11 + p21;
+
+    // Set s1=1 (A∧B), s4=0 (¬A∧¬B), solve for s2, s3
+    // From A-neutrality: (1-pA)·p11·s1 + (1-pA)·p12·s2 - pA·p21·s3 - pA·p22·s4 = 0
+    // From B-neutrality: (1-pB)·p11·s1 - pB·p12·s2 + (1-pB)·p21·s3 - pB·p22·s4 = 0
+
+    // With s1=1, s4=0:
+    // (1-pA)·p12·s2 - pA·p21·s3 = -(1-pA)·p11
+    // -pB·p12·s2 + (1-pB)·p21·s3 = -(1-pB)·p11
+
+    // Matrix form: [a b; c d] [s2; s3] = [e; f]
+    const a = (1 - pA) * p12;
+    const b = -pA * p21;
+    const c = -pB * p12;
+    const d = (1 - pB) * p21;
+    const e = -(1 - pA) * p11;
+    const f = -(1 - pB) * p11;
+
+    // Solve using Cramer's rule
+    const det = a * d - b * c;
+    if (Math.abs(det) < 1e-10) {
+        // Degenerate case (e.g., independent events)
+        return { s1: 1, s2: 0, s3: 0, s4: 1 };
+    }
+
+    const s2 = (e * d - b * f) / det;
+    const s3 = (a * f - e * c) / det;
+
+    return { s1: 1, s2, s3, s4: 0 };
+}
+
+/**
+ * Transform weights to be long-only (all non-negative) by adding cash position.
+ *
+ * @param {Object} weights - {s1, s2, s3, s4} possibly with negatives
+ * @returns {Object} {s1, s2, s3, s4} all non-negative
+ */
+function makeLongOnly(weights) {
+    const minWeight = Math.min(weights.s1, weights.s2, weights.s3, weights.s4);
+    if (minWeight >= 0) return weights;
+
+    // Add -minWeight to all (equivalent to adding cash)
+    const offset = -minWeight;
+    return {
+        s1: weights.s1 + offset,
+        s2: weights.s2 + offset,
+        s3: weights.s3 + offset,
+        s4: weights.s4 + offset
+    };
+}
+
+/**
+ * Scale weights so the maximum equals the target.
+ *
+ * @param {Object} weights - {s1, s2, s3, s4}
+ * @param {number} maxShares - Target for the maximum weight
+ * @returns {Object} Scaled weights
+ */
+function scaleWeights(weights, maxShares) {
+    const maxWeight = Math.max(weights.s1, weights.s2, weights.s3, weights.s4);
+    if (maxWeight <= 0) return { s1: 0, s2: 0, s3: 0, s4: 0 };
+
+    const scale = maxShares / maxWeight;
+    return {
+        s1: weights.s1 * scale,
+        s2: weights.s2 * scale,
+        s3: weights.s3 * scale,
+        s4: weights.s4 * scale
+    };
+}
+
+/**
+ * Analyze a correlation bet: compute costs, expected payouts, and neutrality quality.
+ *
+ * @param {Object} pools - Pool data {a_yes_b_yes: {YES, NO}, ...}
+ * @param {Object} probs - Joint probabilities
+ * @param {number} scale - Maximum shares to buy
+ * @param {string} direction - 'long' or 'short'
+ * @returns {Object} Analysis results
+ */
+function analyzeCorrelationBet(pools, probs, scale, direction) {
+    // Get raw neutral weights
+    // Default computation tends to be off-diagonal heavy (short correlation)
+    let weights = computeNeutralCorrelationWeights(probs);
+
+    // For long correlation, negate weights to flip which diagonal dominates
+    // Negation flips the economic exposure; makeLongOnly then shifts to positive
+    if (direction === 'long') {
+        weights = { s1: -weights.s1, s2: -weights.s2, s3: -weights.s3, s4: -weights.s4 };
+    }
+
+    // Make long-only (shift so all positive) and scale
+    weights = makeLongOnly(weights);
+    weights = scaleWeights(weights, scale);
+
+    // Map to cell names
+    const shares = {
+        a_yes_b_yes: weights.s1,
+        a_yes_b_no: weights.s2,
+        a_no_b_yes: weights.s3,
+        a_no_b_no: weights.s4
+    };
+
+    // Compute costs using AMM (sequential simulation)
+    let simPools = copyPools(pools);
+    let totalCost = 0;
+    const costs = {};
+    const preTradeProbs = {};
+    const postTradeProbs = {};
+
+    // Compute initial probabilities
+    const allCells = ['a_yes_b_yes', 'a_yes_b_no', 'a_no_b_yes', 'a_no_b_no'];
+    for (const cellName of allCells) {
+        const pool = simPools[cellName];
+        if (pool && pool.YES && pool.NO) {
+            preTradeProbs[cellName] = probabilityFromPool(pool.YES, pool.NO);
+        }
+    }
+
+    // Estimate initial costs for sorting (before sequential effects)
+    const initialCostEstimates = {};
+    for (const cellName of allCells) {
+        if (shares[cellName] < 0.001) continue;
+        const pool = simPools[cellName];
+        if (pool && pool.YES && pool.NO) {
+            // Quick cost estimate using simple formula
+            initialCostEstimates[cellName] = costForShares(pool.YES, pool.NO, shares[cellName], 'YES');
+        }
+    }
+
+    // Sort by cost (lowest first) - smaller bets first for min bet flexibility
+    const cellOrder = allCells
+        .filter(c => shares[c] >= 0.001)
+        .sort((a, b) => (initialCostEstimates[a] || 0) - (initialCostEstimates[b] || 0));
+
+    for (const cellName of cellOrder) {
+        const shareCount = shares[cellName];
+        if (shareCount < 0.001) {
+            costs[cellName] = 0;
+            continue;
+        }
+
+        const pool = simPools[cellName];
+        if (!pool || !pool.YES || !pool.NO) {
+            costs[cellName] = 0;
+            continue;
+        }
+
+        // Use multi-choice simulation for accurate auto-arb handling
+        const allPoolsById = {};
+        for (const [cn, p] of Object.entries(simPools)) {
+            if (p && p.YES && p.NO) {
+                allPoolsById[cn] = { YES: p.YES, NO: p.NO };
+            }
+        }
+
+        // Find cost for target shares using binary search
+        const targetShares = shareCount;
+        const result = multiChoiceCostForShares(allPoolsById, cellName, targetShares, 'YES');
+
+        if (result && isFinite(result.cost)) {
+            costs[cellName] = result.cost;
+            totalCost += result.cost;
+            simPools = result.newPools;
+        } else {
+            // Fallback to simple cost calculation
+            const cost = costForShares(pool.YES, pool.NO, shareCount, 'YES');
+            costs[cellName] = cost;
+            totalCost += cost;
+            const newPool = poolAfterTrade(pool.YES, pool.NO, cost, 'YES');
+            simPools[cellName] = { YES: newPool.y, NO: newPool.n };
+        }
+    }
+
+    // Compute post-trade probabilities for ALL cells (not just traded ones)
+    for (const cellName of allCells) {
+        const pool = simPools[cellName];
+        if (pool && pool.YES && pool.NO) {
+            postTradeProbs[cellName] = probabilityFromPool(pool.YES, pool.NO);
+        }
+    }
+
+    // Compute expected payouts conditional on each outcome for neutrality check
+    // E[payout | A] = (p11·s1 + p12·s2) / pA
+    // E[payout | ~A] = (p21·s3 + p22·s4) / p~A
+    const pA = postTradeProbs.a_yes_b_yes + postTradeProbs.a_yes_b_no;
+    const pNotA = postTradeProbs.a_no_b_yes + postTradeProbs.a_no_b_no;
+    const pB = postTradeProbs.a_yes_b_yes + postTradeProbs.a_no_b_yes;
+    const pNotB = postTradeProbs.a_yes_b_no + postTradeProbs.a_no_b_no;
+
+    const payoutGivenA = pA > 0 ?
+        (postTradeProbs.a_yes_b_yes * shares.a_yes_b_yes + postTradeProbs.a_yes_b_no * shares.a_yes_b_no) / pA : 0;
+    const payoutGivenNotA = pNotA > 0 ?
+        (postTradeProbs.a_no_b_yes * shares.a_no_b_yes + postTradeProbs.a_no_b_no * shares.a_no_b_no) / pNotA : 0;
+    const payoutGivenB = pB > 0 ?
+        (postTradeProbs.a_yes_b_yes * shares.a_yes_b_yes + postTradeProbs.a_no_b_yes * shares.a_no_b_yes) / pB : 0;
+    const payoutGivenNotB = pNotB > 0 ?
+        (postTradeProbs.a_yes_b_no * shares.a_yes_b_no + postTradeProbs.a_no_b_no * shares.a_no_b_no) / pNotB : 0;
+
+    // Expected profit at post-trade prices (should be ~0 for fair market)
+    const expectedPayout =
+        postTradeProbs.a_yes_b_yes * shares.a_yes_b_yes +
+        postTradeProbs.a_yes_b_no * shares.a_yes_b_no +
+        postTradeProbs.a_no_b_yes * shares.a_no_b_yes +
+        postTradeProbs.a_no_b_no * shares.a_no_b_no;
+    const expectedProfit = expectedPayout - totalCost;
+
+    // Compute profit scenarios for different beliefs
+    // Shift diagonal probability by delta
+    const profitScenarios = [];
+    for (const delta of [-0.10, -0.05, 0, 0.05, 0.10]) {
+        // Shift diagonal (AB and ~A~B) up by delta/2 each, off-diagonal down
+        const shiftedProbs = {
+            a_yes_b_yes: Math.max(0.01, Math.min(0.99, postTradeProbs.a_yes_b_yes + delta / 2)),
+            a_no_b_no: Math.max(0.01, Math.min(0.99, postTradeProbs.a_no_b_no + delta / 2)),
+            a_yes_b_no: Math.max(0.01, Math.min(0.99, postTradeProbs.a_yes_b_no - delta / 2)),
+            a_no_b_yes: Math.max(0.01, Math.min(0.99, postTradeProbs.a_no_b_yes - delta / 2))
+        };
+
+        const payout =
+            shiftedProbs.a_yes_b_yes * shares.a_yes_b_yes +
+            shiftedProbs.a_yes_b_no * shares.a_yes_b_no +
+            shiftedProbs.a_no_b_yes * shares.a_no_b_yes +
+            shiftedProbs.a_no_b_no * shares.a_no_b_no;
+
+        profitScenarios.push({
+            delta,
+            label: delta === 0 ? 'Current' : (delta > 0 ? `+${(delta * 100).toFixed(0)}pp` : `${(delta * 100).toFixed(0)}pp`),
+            profit: payout - totalCost,
+            roi: totalCost > 0 ? ((payout - totalCost) / totalCost * 100) : 0
+        });
+    }
+
+    // Neutrality quality: how close are conditional payouts?
+    const maxPayoutDiff = Math.max(
+        Math.abs(payoutGivenA - payoutGivenNotA),
+        Math.abs(payoutGivenB - payoutGivenNotB)
+    );
+    const avgPayout = (payoutGivenA + payoutGivenNotA + payoutGivenB + payoutGivenNotB) / 4;
+    const neutralityQuality = avgPayout > 0 ? 1 - (maxPayoutDiff / avgPayout) : 1;
+
+    // Check for minimum bet violations (M$1 per bet)
+    const MIN_BET = 1.0;
+    const belowMinBets = [];
+    for (const [cellName, cost] of Object.entries(costs)) {
+        if (cost > 0.001 && cost < MIN_BET) {
+            belowMinBets.push({ cellName, cost });
+        }
+    }
+
+    // Count how many non-zero bets we have
+    const nonZeroBets = Object.values(costs).filter(c => c > 0.001).length;
+
+    return {
+        shares,
+        costs,
+        totalCost,
+        expectedProfit,
+        preTradeProbs,
+        postTradeProbs,
+        tradeOrder: cellOrder,  // Sorted by probability, lowest first
+        neutrality: {
+            payoutGivenA,
+            payoutGivenNotA,
+            payoutGivenB,
+            payoutGivenNotB,
+            quality: neutralityQuality
+        },
+        profitScenarios,
+        belowMinBets,
+        nonZeroBets,
+        canExecute: belowMinBets.length === 0 && nonZeroBets > 0
+    };
+}
+
+/**
+ * Update the correlation betting panel with current analysis.
+ */
+function updateCorrelationBetPanel() {
+    if (!marketProbabilities || !marketProbabilities.pools) {
+        document.getElementById('correlation-results').classList.add('hidden');
+        return;
+    }
+
+    const scale = parseFloat(document.getElementById('corr-scale').value) || 10;
+    const pools = {};
+    for (const [cellName, pool] of Object.entries(marketProbabilities.pools)) {
+        if (pool && pool.YES && pool.NO) {
+            pools[cellName] = { YES: pool.YES, NO: pool.NO };
+        }
+    }
+
+    if (Object.keys(pools).length < 4) {
+        document.getElementById('correlation-results').classList.add('hidden');
+        return;
+    }
+
+    const probs = marketProbabilities.joint;
+    const analysis = analyzeCorrelationBet(pools, probs, scale, correlationDirection);
+
+    // Update position display
+    document.getElementById('corr-pos-ab').textContent = analysis.shares.a_yes_b_yes.toFixed(1);
+    document.getElementById('corr-pos-anb').textContent = analysis.shares.a_yes_b_no.toFixed(1);
+    document.getElementById('corr-pos-nab').textContent = analysis.shares.a_no_b_yes.toFixed(1);
+    document.getElementById('corr-pos-nanb').textContent = analysis.shares.a_no_b_no.toFixed(1);
+
+    // Cell name to display label mapping
+    const cellLabels = {
+        a_yes_b_yes: (currentMarketConfig?.labelA || 'A') + ' & ' + (currentMarketConfig?.labelB || 'B'),
+        a_yes_b_no: (currentMarketConfig?.labelA || 'A') + ' & ~' + (currentMarketConfig?.labelB || 'B'),
+        a_no_b_yes: '~' + (currentMarketConfig?.labelA || 'A') + ' & ' + (currentMarketConfig?.labelB || 'B'),
+        a_no_b_no: '~' + (currentMarketConfig?.labelA || 'A') + ' & ~' + (currentMarketConfig?.labelB || 'B')
+    };
+
+    // Build trade plan showing each step with probability movement
+    const tradeStepsHtml = analysis.tradeOrder.map((cellName, idx) => {
+        const shares = analysis.shares[cellName];
+        const cost = analysis.costs[cellName];
+        const preProb = analysis.preTradeProbs[cellName] || 0;
+        const postProb = analysis.postTradeProbs[cellName] || 0;
+        const isBelowMin = cost > 0.001 && cost < 1.0;
+
+        return `
+            <div class="trade-step${isBelowMin ? ' below-min' : ''}">
+                <span class="trade-step-num">${idx + 1}</span>
+                <div class="trade-step-details">
+                    <div class="trade-step-cell">${cellLabels[cellName]}</div>
+                    <div class="trade-step-movement">${formatProb(preProb)} → ${formatProb(postProb)}</div>
+                </div>
+                <div class="trade-step-right">
+                    <span class="trade-step-shares">${shares.toFixed(1)} sh</span>
+                    <span class="trade-step-cost${isBelowMin ? ' min-warning' : ''}">M$${cost.toFixed(2)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('corr-trade-steps').innerHTML = tradeStepsHtml;
+
+    // Update labels from config
+    if (currentMarketConfig) {
+        document.getElementById('corr-col-b').textContent = currentMarketConfig.labelB || 'B';
+        document.getElementById('corr-col-not-b').textContent = '~' + (currentMarketConfig.labelB || 'B');
+        document.getElementById('corr-row-a').textContent = currentMarketConfig.labelA || 'A';
+        document.getElementById('corr-row-not-a').textContent = '~' + (currentMarketConfig.labelA || 'A');
+    }
+
+    // Highlight cells based on direction: diagonal for long, off-diagonal for short
+    const diagCells = document.querySelectorAll('.corr-pos-cell.diagonal');
+    const offDiagCells = document.querySelectorAll('.corr-pos-cell.value:not(.diagonal)');
+
+    // Reset all value cells first
+    document.querySelectorAll('.corr-pos-cell.value').forEach(cell => {
+        cell.style.background = '';
+        cell.style.border = '';
+    });
+
+    if (correlationDirection === 'long') {
+        // Long correlation: bet on diagonal (both happen or neither)
+        diagCells.forEach(cell => {
+            cell.style.background = 'rgba(74, 222, 128, 0.15)';
+            cell.style.border = '2px solid var(--success)';
+        });
+    } else {
+        // Short correlation: bet on off-diagonal (one happens, other doesn't)
+        offDiagCells.forEach(cell => {
+            cell.style.background = 'rgba(239, 68, 68, 0.15)';
+            cell.style.border = '2px solid var(--error)';
+        });
+    }
+
+    // Update summary
+    document.getElementById('corr-total-cost').textContent = 'M$' + analysis.totalCost.toFixed(2);
+    const profitEl = document.getElementById('corr-expected-profit');
+    profitEl.textContent = 'M$' + analysis.expectedProfit.toFixed(2);
+    profitEl.style.color = analysis.expectedProfit >= 0 ? 'var(--success)' : 'var(--error)';
+
+    // Update neutrality check
+    document.getElementById('corr-payout-a').textContent = 'M$' + analysis.neutrality.payoutGivenA.toFixed(2);
+    document.getElementById('corr-payout-not-a').textContent = 'M$' + analysis.neutrality.payoutGivenNotA.toFixed(2);
+    document.getElementById('corr-payout-b').textContent = 'M$' + analysis.neutrality.payoutGivenB.toFixed(2);
+    document.getElementById('corr-payout-not-b').textContent = 'M$' + analysis.neutrality.payoutGivenNotB.toFixed(2);
+
+    const neutralityStatusEl = document.getElementById('corr-neutrality-status');
+    if (analysis.neutrality.quality > 0.95) {
+        neutralityStatusEl.textContent = 'Excellent neutrality';
+        neutralityStatusEl.className = 'neutrality-status good';
+    } else if (analysis.neutrality.quality > 0.85) {
+        neutralityStatusEl.textContent = 'Good neutrality (some degradation at scale)';
+        neutralityStatusEl.className = 'neutrality-status good';
+    } else {
+        neutralityStatusEl.textContent = 'Neutrality degraded - consider smaller scale';
+        neutralityStatusEl.className = 'neutrality-status degraded';
+    }
+
+    // Update profit scenarios
+    const scenariosEl = document.getElementById('corr-profit-scenarios');
+    scenariosEl.innerHTML = analysis.profitScenarios.map(s => {
+        const valueClass = s.profit > 0.01 ? 'positive' : (s.profit < -0.01 ? 'negative' : 'neutral');
+        const roiStr = s.roi !== 0 ? ` (${s.roi > 0 ? '+' : ''}${s.roi.toFixed(1)}%)` : '';
+        return `
+            <div class="profit-scenario">
+                <span class="scenario-label">${s.label} diagonal:</span>
+                <span class="scenario-value ${valueClass}">M$${s.profit.toFixed(2)}${roiStr}</span>
+            </div>
+        `;
+    }).join('');
+
+    // Update minimum bet warning
+    const minBetWarning = document.getElementById('corr-min-bet-warning');
+    if (analysis.belowMinBets.length > 0) {
+        minBetWarning.classList.remove('hidden');
+    } else {
+        minBetWarning.classList.add('hidden');
+    }
+
+    // Update button states
+    const validateBtn = document.getElementById('corr-validate-btn');
+    const executeBtn = document.getElementById('corr-execute-btn');
+    const statusEl = document.getElementById('corr-execute-status');
+
+    const hasApiKey = !!apiKeyInput.value.trim();
+    validateBtn.disabled = !analysis.canExecute || !hasApiKey;
+    executeBtn.disabled = !analysis.canExecute || !hasApiKey;
+    statusEl.textContent = '';
+    statusEl.className = 'execute-status';
+
+    if (!hasApiKey) {
+        statusEl.textContent = 'API key required';
+    } else if (!analysis.canExecute && analysis.belowMinBets.length > 0) {
+        statusEl.textContent = `${analysis.belowMinBets.length} bet(s) below M$1 minimum`;
+    }
+
+    // Store current analysis for execute/validate
+    currentCorrelationAnalysis = analysis;
+
+    document.getElementById('correlation-results').classList.remove('hidden');
+}
+
+/**
+ * Validate correlation bet with API dry-run.
+ */
+async function validateCorrelationBet() {
+    if (!currentCorrelationAnalysis || !currentCorrelationAnalysis.canExecute) return;
+
+    const statusEl = document.getElementById('corr-execute-status');
+    statusEl.textContent = 'Validating...';
+    statusEl.className = 'execute-status pending';
+
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        statusEl.textContent = 'API key required';
+        statusEl.className = 'execute-status error';
+        return;
+    }
+
+    try {
+        const analysis = currentCorrelationAnalysis;
+        // Use the computed trade order (sorted by cost)
+        const cellOrder = analysis.tradeOrder || [];
+        let allValid = true;
+        const results = [];
+
+        for (const cellName of cellOrder) {
+            const cost = analysis.costs[cellName];
+            // Skip cells with no cost or below minimum
+            if (!cost || cost < 1.0) continue;
+
+            const answerId = marketProbabilities.answerIds[cellName];
+            if (!answerId) continue;
+
+            try {
+                const result = await placeBetDryRun(currentMarket.id, answerId, 'YES', cost);
+                // API returns bet details on success (shares, probBefore, probAfter, etc.)
+                console.log(`Validated ${cellName}: M$${cost.toFixed(2)} → ${result.shares?.toFixed(2)} shares`);
+                results.push({ cellName, cost, result, valid: true });
+            } catch (err) {
+                console.error(`Validation failed for ${cellName}:`, err.message);
+                results.push({ cellName, cost, error: err.message, valid: false });
+                allValid = false;
+            }
+        }
+
+        if (allValid) {
+            statusEl.textContent = `Validated ${results.length} bets`;
+            statusEl.className = 'execute-status success';
+        } else {
+            const failedCount = results.filter(r => !r.valid).length;
+            statusEl.textContent = `${failedCount}/${results.length} bet(s) failed - see console`;
+            statusEl.className = 'execute-status error';
+        }
+    } catch (error) {
+        statusEl.textContent = 'Validation failed: ' + error.message;
+        statusEl.className = 'execute-status error';
+    }
+}
+
+/**
+ * Execute the correlation bet.
+ */
+async function executeCorrelationBet() {
+    if (!currentCorrelationAnalysis || !currentCorrelationAnalysis.canExecute) return;
+
+    const statusEl = document.getElementById('corr-execute-status');
+    const executeBtn = document.getElementById('corr-execute-btn');
+    const validateBtn = document.getElementById('corr-validate-btn');
+
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        statusEl.textContent = 'API key required';
+        statusEl.className = 'execute-status error';
+        return;
+    }
+
+    // Confirm before executing
+    const totalCost = currentCorrelationAnalysis.totalCost;
+    if (!confirm(`Place correlation bet for M$${totalCost.toFixed(2)}?`)) {
+        return;
+    }
+
+    executeBtn.disabled = true;
+    validateBtn.disabled = true;
+    statusEl.textContent = 'Executing...';
+    statusEl.className = 'execute-status pending';
+
+    try {
+        const analysis = currentCorrelationAnalysis;
+        const cellOrder = analysis.tradeOrder || [];
+        const results = [];
+
+        for (const cellName of cellOrder) {
+            const cost = analysis.costs[cellName];
+            if (!cost || cost < 1.0) continue;
+
+            const answerId = marketProbabilities.answerIds[cellName];
+            if (!answerId) continue;
+
+            statusEl.textContent = `Betting on ${cellName}...`;
+
+            // placeBet throws on error, returns bet data on success
+            const result = await placeBet(apiKey, currentMarket.id, answerId, 'YES', cost);
+            console.log(`Placed bet on ${cellName}: M$${cost.toFixed(2)} → ${result.shares?.toFixed(2)} shares`);
+            results.push({ cellName, cost, result });
+        }
+
+        statusEl.textContent = `Placed ${results.length} bets successfully!`;
+        statusEl.className = 'execute-status success';
+
+        // Refresh market data
+        if (currentMarketConfig) {
+            await loadMarket(currentMarketConfig);
+        }
+    } catch (error) {
+        statusEl.textContent = 'Execution failed: ' + error.message;
+        statusEl.className = 'execute-status error';
+    } finally {
+        executeBtn.disabled = false;
+        validateBtn.disabled = false;
+    }
 }
 
 /**

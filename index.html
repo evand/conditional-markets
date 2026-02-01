@@ -184,6 +184,105 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Correlation Betting Panel -->
+            <div class="correlation-section">
+                <div id="correlation-header" class="correlation-header">
+                    <h3>Correlation Betting</h3>
+                    <button id="correlation-toggle" class="toggle-btn">▼</button>
+                </div>
+                <div id="correlation-content" class="correlation-content">
+                    <p class="correlation-explainer">
+                        Bet on correlation between A and B while maintaining market-neutral exposure to each marginal (for small trades).
+                        Long correlation profits if both happen or neither; short profits on mixed outcomes.
+                    </p>
+
+                    <div class="correlation-controls">
+                        <div class="control-row">
+                            <label>Direction:</label>
+                            <div class="direction-toggle">
+                                <button class="corr-direction-btn active" data-direction="long">Long Correlation</button>
+                                <button class="corr-direction-btn" data-direction="short">Short Correlation</button>
+                            </div>
+                        </div>
+                        <div class="control-row">
+                            <label for="corr-scale">Max Shares:</label>
+                            <input type="number" id="corr-scale" min="1" value="10" step="1">
+                            <button id="corr-calculate" class="btn-secondary">Calculate</button>
+                        </div>
+                    </div>
+
+                    <div id="correlation-results" class="correlation-results hidden">
+                        <div class="corr-position-table">
+                            <h4>Position (YES shares)</h4>
+                            <div class="corr-position-grid">
+                                <div class="corr-pos-cell header"></div>
+                                <div class="corr-pos-cell header" id="corr-col-b">B</div>
+                                <div class="corr-pos-cell header" id="corr-col-not-b">~B</div>
+                                <div class="corr-pos-cell header" id="corr-row-a">A</div>
+                                <div class="corr-pos-cell value diagonal" id="corr-pos-ab">--</div>
+                                <div class="corr-pos-cell value" id="corr-pos-anb">--</div>
+                                <div class="corr-pos-cell header" id="corr-row-not-a">~A</div>
+                                <div class="corr-pos-cell value" id="corr-pos-nab">--</div>
+                                <div class="corr-pos-cell value diagonal" id="corr-pos-nanb">--</div>
+                            </div>
+                        </div>
+
+                        <div class="corr-trade-plan">
+                            <h4>Trade Plan (lowest prob first)</h4>
+                            <div id="corr-trade-steps"></div>
+                        </div>
+
+                        <div class="corr-summary">
+                            <div class="summary-row">
+                                <span class="summary-label">Total Cost:</span>
+                                <span class="summary-value" id="corr-total-cost">--</span>
+                            </div>
+                            <div class="summary-row">
+                                <span class="summary-label">E[profit] at post-trade prices:</span>
+                                <span class="summary-value" id="corr-expected-profit">--</span>
+                            </div>
+                            <div id="corr-min-bet-warning" class="min-bet-warning hidden">
+                                Some bets are below M$1 minimum. Increase scale or use fewer cells.
+                            </div>
+                        </div>
+
+                        <div class="corr-actions">
+                            <button id="corr-validate-btn" class="btn-secondary" disabled>Validate</button>
+                            <button id="corr-execute-btn" class="btn-primary" disabled>Place Correlation Bet</button>
+                            <span id="corr-execute-status" class="execute-status"></span>
+                        </div>
+
+                        <div class="corr-neutrality">
+                            <h4>Neutrality Check</h4>
+                            <div class="neutrality-grid">
+                                <div class="neutrality-row">
+                                    <span class="neutrality-label">E[payout | A]:</span>
+                                    <span class="neutrality-value" id="corr-payout-a">--</span>
+                                </div>
+                                <div class="neutrality-row">
+                                    <span class="neutrality-label">E[payout | ~A]:</span>
+                                    <span class="neutrality-value" id="corr-payout-not-a">--</span>
+                                </div>
+                                <div class="neutrality-row">
+                                    <span class="neutrality-label">E[payout | B]:</span>
+                                    <span class="neutrality-value" id="corr-payout-b">--</span>
+                                </div>
+                                <div class="neutrality-row">
+                                    <span class="neutrality-label">E[payout | ~B]:</span>
+                                    <span class="neutrality-value" id="corr-payout-not-b">--</span>
+                                </div>
+                            </div>
+                            <div id="corr-neutrality-status" class="neutrality-status"></div>
+                        </div>
+
+                        <div class="corr-profit-table">
+                            <h4>Profit by Belief (diagonal probability shift)</h4>
+                            <div id="corr-profit-scenarios"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- Bet Dialog -->
