@@ -178,5 +178,17 @@
       "a_no_b_yes": "No AI movies by early 2028 & NVDA above $400 at EOY 2027",
       "a_no_b_no": "No AI movies by early 2028 & NVDA below $400 at EOY 2027"
     }
+  },
+  {
+    "name": "Texas Senator / 14+ Dem Reps",
+    "slug": "will-texas-elect-a-democratic-senat",
+    "labelA": "Dem Senator",
+    "labelB": "≥14 Dem Reps",
+    "truthTable": {
+      "a_yes_b_yes": "Dem Senator, >= 14 Dem Reps",
+      "a_yes_b_no": "Dem Senator, < 14 Dem Reps",
+      "a_no_b_yes": "Non-Dem Senator, >= 14 Dem Reps",
+      "a_no_b_no": "Non-Dem Senator, < 14 Dem Reps"
+    }
   }
 ]
