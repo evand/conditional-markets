@@ -314,6 +314,17 @@ async function init() {
     await loadMarketList();
     loadApiKey();
     setupEventListeners();
+
+    // Deep link: auto-select market from URL hash (e.g., #will-democrats-win-iowa-in-2026)
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+        const option = marketSelect.querySelector(`option[value="${CSS.escape(hash)}"]`);
+        if (option) {
+            marketSelect.value = hash;
+            const config = JSON.parse(option.dataset.config);
+            await loadMarket(config);
+        }
+    }
 }
 
 async function loadMarketList() {
@@ -759,6 +770,8 @@ async function onMarketSelect(event) {
 
 async function loadMarket(config) {
     currentMarketConfig = config;
+    // Update URL hash for deep linking
+    window.history.replaceState(null, '', '#' + config.slug);
     showLoading();
     hideError();
 

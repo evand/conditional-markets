@@ -190,5 +190,17 @@
       "a_no_b_yes": "Non-Dem Senator, >= 14 Dem Reps",
       "a_no_b_no": "Non-Dem Senator, < 14 Dem Reps"
     }
+  },
+  {
+    "name": "Iowa 2026: Dem Senate / Governor",
+    "slug": "will-democrats-win-iowa-in-2026",
+    "labelA": "Dem Senate",
+    "labelB": "Dem Governor",
+    "truthTable": {
+      "a_yes_b_yes": "Democrats win both senate and governor",
+      "a_yes_b_no": "Democrats win senate ONLY",
+      "a_no_b_yes": "Democrats win governor ONLY",
+      "a_no_b_no": "Democrats don\u2019t win senate or governor"
+    }
   }
 ]
