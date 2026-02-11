@@ -1285,13 +1285,15 @@ function scaleWeights(weights, maxShares) {
  * @returns {Object} Analysis results
  */
 function analyzeCorrelationBet(pools, probs, scale, direction) {
-    // Get raw neutral weights
-    // Default computation tends to be off-diagonal heavy (short correlation)
+    // Get raw neutral weights (direction depends on market probabilities)
     let weights = computeNeutralCorrelationWeights(probs);
 
-    // For long correlation, negate weights to flip which diagonal dominates
-    // Negation flips the economic exposure; makeLongOnly then shifts to positive
-    if (direction === 'long') {
+    // "Long" = always diagonal (A∧B + ¬A∧¬B), "Short" = always off-diagonal
+    // Check which diagonal the raw weights favor, negate if it's not what we want
+    const test = makeLongOnly(weights);
+    const isDiagonalHeavy = (test.s1 + test.s4) >= (test.s2 + test.s3);
+    const wantDiagonal = (direction === 'long');
+    if (wantDiagonal !== isDiagonalHeavy) {
         weights = { s1: -weights.s1, s2: -weights.s2, s3: -weights.s3, s4: -weights.s4 };
     }
 
