@@ -52,7 +52,7 @@ body {
 }
 
 .container {
-    max-width: 1000px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 2rem;
 }
@@ -694,6 +694,87 @@ button:disabled {
 .cell.selected {
     outline: 3px solid var(--accent);
     outline-offset: -3px;
+}
+
+/* Matrix + Chart side-by-side layout */
+.matrix-and-chart {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.matrix-and-chart .full-matrix {
+    flex: 0 0 auto;
+    min-width: 0;
+}
+
+/* Chart Panel */
+.chart-panel {
+    flex: 1 1 300px;
+    min-width: 280px;
+    max-width: 600px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.chart-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.chart-panel-header h3 {
+    color: var(--accent);
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.chart-body {
+    position: relative;
+    width: 100%;
+    min-height: 200px;
+}
+
+.chart-body canvas {
+    width: 100% !important;
+}
+
+.spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Clickable stat items */
+.stat-item.clickable {
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.stat-item.clickable:hover {
+    background: var(--cell-hover);
+}
+
+.stat-item.selected {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
+}
+
+/* Responsive: stack on narrow screens */
+@media (max-width: 1100px) {
+    .matrix-and-chart {
+        flex-direction: column;
+    }
+
+    .chart-panel {
+        max-width: none;
+        width: 100%;
+    }
 }
 
 /* Stats Section */

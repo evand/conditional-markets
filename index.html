@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conditional Markets Viewer</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
     <div class="alpha-banner">
@@ -53,6 +55,7 @@
         </section>
 
         <section id="matrix-container" class="matrix-container hidden">
+            <div class="matrix-and-chart">
             <!-- Full confusion matrix with conditionals on edges -->
             <div class="full-matrix">
                 <div class="matrix-grid">
@@ -123,6 +126,20 @@
                 </div>
             </div>
 
+            <!-- History Chart Panel -->
+            <div id="chart-panel" class="chart-panel hidden">
+                <div class="chart-panel-header">
+                    <h3 id="chart-title">History</h3>
+                    <div class="chart-loading hidden" id="chart-loading">
+                        <div class="spinner-small"></div>
+                    </div>
+                </div>
+                <div class="chart-body">
+                    <canvas id="history-chart"></canvas>
+                </div>
+            </div>
+            </div><!-- end matrix-and-chart -->
+
             <!-- Inline bet panel (shows when cell is clicked) -->
             <div id="bet-panel" class="bet-panel hidden">
                 <div class="bet-panel-header">
@@ -166,19 +183,19 @@
             <div class="stats-section">
                 <h3>Derived Statistics</h3>
                 <div class="stats-grid">
-                    <div class="stat-item">
+                    <div class="stat-item clickable" data-stat="correlation">
                         <span class="stat-label">Correlation (A,B)</span>
                         <span class="stat-value" id="stat-correlation">--</span>
                     </div>
-                    <div class="stat-item">
+                    <div class="stat-item clickable" data-stat="lift_a">
                         <span class="stat-label">Lift P(A|B)/P(A)</span>
                         <span class="stat-value" id="stat-lift-a">--</span>
                     </div>
-                    <div class="stat-item">
+                    <div class="stat-item clickable" data-stat="lift_b">
                         <span class="stat-label">Lift P(B|A)/P(B)</span>
                         <span class="stat-value" id="stat-lift-b">--</span>
                     </div>
-                    <div class="stat-item">
+                    <div class="stat-item clickable" data-stat="odds_ratio">
                         <span class="stat-label">Odds Ratio</span>
                         <span class="stat-value" id="stat-odds-ratio">--</span>
                     </div>

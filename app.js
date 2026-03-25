@@ -742,6 +742,23 @@ function setupEventListeners() {
         });
     });
 
+    // Stat item clicks for charting derived stats
+    document.querySelectorAll('.stat-item[data-stat]').forEach(item => {
+        item.addEventListener('click', () => {
+            const statType = item.dataset.stat;
+            if (!statType || !marketProbabilities) return;
+
+            // Clear other selections
+            document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+            document.querySelectorAll('.stat-item.selected').forEach(c => c.classList.remove('selected'));
+            closeBetPanel();
+
+            item.classList.add('selected');
+            const chart = chartMetricForStat(statType);
+            showHistoryChart(chart.metric, chart.label);
+        });
+    });
+
     document.getElementById('corr-calculate').addEventListener('click', updateCorrelationBetPanel);
     document.getElementById('corr-scale').addEventListener('change', updateCorrelationBetPanel);
     document.getElementById('corr-validate-btn').addEventListener('click', validateCorrelationBet);
@@ -772,6 +789,7 @@ async function loadMarket(config) {
     currentMarketConfig = config;
     // Update URL hash for deep linking
     window.history.replaceState(null, '', '#' + config.slug);
+    clearChartCache();
     showLoading();
     hideError();
 
@@ -1827,6 +1845,7 @@ function openBetPanel(cellType, cellElement) {
 
     // Clear previous selection and modes
     document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.stat-item.selected').forEach(c => c.classList.remove('selected'));
     currentCondType = null;
     currentMarginalType = null;
 
@@ -1855,11 +1874,16 @@ function openBetPanel(cellType, cellElement) {
 
     updateTradePreview();
     document.getElementById('bet-panel').classList.remove('hidden');
+
+    // Show history chart
+    const chart = chartMetricForJointCell(cellType);
+    showHistoryChart(chart.metric, chart.label);
 }
 
 function closeBetPanel() {
     document.getElementById('bet-panel').classList.add('hidden');
     document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.stat-item.selected').forEach(c => c.classList.remove('selected'));
     selectedCell = null;
     selectedCellType = null;
     currentCondType = null;
@@ -2316,6 +2340,7 @@ function openConditionalBetPanel(condType, cellElement) {
 
     // Clear previous selection
     document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.stat-item.selected').forEach(c => c.classList.remove('selected'));
 
     // Select new cell
     selectedCell = cellElement;
@@ -2339,6 +2364,10 @@ function openConditionalBetPanel(condType, cellElement) {
 
     updateConditionalTradePreview();
     document.getElementById('bet-panel').classList.remove('hidden');
+
+    // Show history chart
+    const chart = chartMetricForConditional(condType);
+    showHistoryChart(chart.metric, chart.label);
 }
 
 function updateConditionalTradePreview() {
@@ -2672,6 +2701,7 @@ function openMarginalBetPanel(marginalType, cellElement) {
 
     // Clear previous selection
     document.querySelectorAll('.cell.selected').forEach(c => c.classList.remove('selected'));
+    document.querySelectorAll('.stat-item.selected').forEach(c => c.classList.remove('selected'));
 
     selectedCell = cellElement;
     currentMarginalType = marginalType;
@@ -2691,6 +2721,10 @@ function openMarginalBetPanel(marginalType, cellElement) {
 
     updateMarginalTradePreview();
     document.getElementById('bet-panel').classList.remove('hidden');
+
+    // Show history chart
+    const chart = chartMetricForMarginal(marginalType);
+    showHistoryChart(chart.metric, chart.label);
 }
 
 function updateMarginalTradePreview() {
@@ -3117,6 +3151,380 @@ function showResultDialog(title, content, isError) {
 
 function closeResultDialog() {
     resultDialog.classList.add('hidden');
+}
+
+// =============================================================================
+// History Chart
+// =============================================================================
+
+let historyChart = null;          // Chart.js instance
+let betHistoryCache = {};         // marketId -> {bets, timeline}
+let currentChartMetric = null;    // What metric is being charted
+let currentChartLabel = null;     // Display label for the metric
+
+/**
+ * Fetch all bets for a market (paginated, oldest first).
+ */
+async function fetchAllBets(marketId) {
+    const allBets = [];
+    let afterId = undefined;
+    const LIMIT = 1000;
+
+    for (let page = 0; page < 50; page++) {  // Safety: max 50k bets
+        let url = `${API_BASE}/bets?contractId=${marketId}&limit=${LIMIT}&order=asc`;
+        if (afterId) url += `&after=${afterId}`;
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Failed to fetch bets: ${response.status}`);
+
+        const bets = await response.json();
+        if (bets.length === 0) break;
+
+        allBets.push(...bets);
+        if (bets.length < LIMIT) break;  // Last page
+
+        afterId = bets[bets.length - 1].id;
+    }
+
+    return allBets;
+}
+
+/**
+ * Build a probability timeline for all 4 answers from bet history.
+ * Returns array of {time, probs: {answerId: prob}} entries.
+ *
+ * For multi-choice markets, each bet has an answerId and probAfter.
+ * We track the latest known probability for each answer.
+ */
+function buildProbTimeline(bets, answers) {
+    if (!answers || answers.length !== 4) return [];
+
+    // Initialize with first known probs (from earliest bets, or answer defaults)
+    const currentProbs = {};
+    for (const answer of answers) {
+        currentProbs[answer.id] = null;  // Unknown until first bet
+    }
+
+    const timeline = [];
+
+    for (const bet of bets) {
+        const aid = bet.answerId;
+        if (aid && aid in currentProbs) {
+            // probAfter is the probability after this bet
+            if (bet.probAfter != null) {
+                currentProbs[aid] = bet.probAfter;
+            }
+
+            // Only emit a point once we have all 4 answer probs
+            const allKnown = Object.values(currentProbs).every(p => p !== null);
+            if (allKnown) {
+                timeline.push({
+                    time: bet.createdTime,
+                    probs: { ...currentProbs }
+                });
+            }
+        }
+    }
+
+    return timeline;
+}
+
+/**
+ * Map answer IDs to cell types using the current market config.
+ * Returns {answerId -> cellType} mapping.
+ */
+function buildAnswerIdToCellMap() {
+    if (!marketProbabilities || !marketProbabilities.answerIds) return {};
+    const map = {};
+    for (const [cellType, answerId] of Object.entries(marketProbabilities.answerIds)) {
+        if (answerId) map[answerId] = cellType;
+    }
+    return map;
+}
+
+/**
+ * Compute a derived metric from joint probabilities at a single time point.
+ * @param {Object} jointProbs - {a_yes_b_yes, a_yes_b_no, a_no_b_yes, a_no_b_no}
+ * @param {string} metric - The metric identifier
+ * @returns {number} The computed value
+ */
+function computeMetricFromJoints(jointProbs, metric) {
+    const j = jointProbs;
+    const pA = j.a_yes_b_yes + j.a_yes_b_no;
+    const pNotA = j.a_no_b_yes + j.a_no_b_no;
+    const pB = j.a_yes_b_yes + j.a_no_b_yes;
+    const pNotB = j.a_yes_b_no + j.a_no_b_no;
+
+    switch (metric) {
+        // Joint cells
+        case 'a_yes_b_yes': return j.a_yes_b_yes;
+        case 'a_yes_b_no':  return j.a_yes_b_no;
+        case 'a_no_b_yes':  return j.a_no_b_yes;
+        case 'a_no_b_no':   return j.a_no_b_no;
+
+        // Marginals
+        case 'marginal_a':     return pA;
+        case 'marginal_not_a': return pNotA;
+        case 'marginal_b':     return pB;
+        case 'marginal_not_b': return pNotB;
+
+        // Conditionals
+        case 'a_given_b':     return pB > 0 ? j.a_yes_b_yes / pB : 0;
+        case 'a_given_not_b': return pNotB > 0 ? j.a_yes_b_no / pNotB : 0;
+        case 'b_given_a':     return pA > 0 ? j.a_yes_b_yes / pA : 0;
+        case 'b_given_not_a': return pNotA > 0 ? j.a_no_b_yes / pNotA : 0;
+
+        // Derived stats
+        case 'correlation': {
+            const cov = j.a_yes_b_yes - pA * pB;
+            const sigA = Math.sqrt(pA * pNotA);
+            const sigB = Math.sqrt(pB * pNotB);
+            return (sigA > 0 && sigB > 0) ? cov / (sigA * sigB) : 0;
+        }
+        case 'lift_a':
+            return pA > 0 ? (pB > 0 ? (j.a_yes_b_yes / pB) / pA : 0) : 0;
+        case 'lift_b':
+            return pB > 0 ? (pA > 0 ? (j.a_yes_b_yes / pA) / pB : 0) : 0;
+        case 'odds_ratio': {
+            const num = j.a_yes_b_yes * j.a_no_b_no;
+            const den = j.a_yes_b_no * j.a_no_b_yes;
+            return den > 0.0001 ? num / den : (num > 0 ? 100 : 1);  // Cap at 100 for display
+        }
+        default: return 0;
+    }
+}
+
+/**
+ * Determine if a metric is a probability (0-1 range) or unbounded.
+ */
+function metricIsProbability(metric) {
+    return !['correlation', 'lift_a', 'lift_b', 'odds_ratio'].includes(metric);
+}
+
+/**
+ * Format a metric value for the chart tooltip.
+ */
+function formatMetricValue(value, metric) {
+    if (metricIsProbability(metric)) {
+        return (value * 100).toFixed(1) + '%';
+    }
+    if (metric === 'correlation') return value.toFixed(3);
+    if (metric === 'odds_ratio') return value.toFixed(2);
+    return value.toFixed(2) + 'x';
+}
+
+/**
+ * Show the history chart for a given metric.
+ * Fetches bet history if not cached.
+ */
+async function showHistoryChart(metric, label) {
+    if (!currentMarket) return;
+
+    currentChartMetric = metric;
+    currentChartLabel = label;
+
+    const chartPanel = document.getElementById('chart-panel');
+    const chartLoading = document.getElementById('chart-loading');
+    const chartTitle = document.getElementById('chart-title');
+
+    chartTitle.textContent = label;
+    chartPanel.classList.remove('hidden');
+
+    // Check cache
+    const marketId = currentMarket.id;
+    if (!betHistoryCache[marketId]) {
+        chartLoading.classList.remove('hidden');
+        try {
+            const bets = await fetchAllBets(marketId);
+            const answerMap = buildAnswerIdToCellMap();
+            const timeline = buildProbTimeline(bets, currentMarket.answers);
+            betHistoryCache[marketId] = { bets, timeline, answerMap };
+        } catch (err) {
+            console.error('Failed to fetch bet history:', err);
+            chartLoading.classList.add('hidden');
+            return;
+        }
+        chartLoading.classList.add('hidden');
+    }
+
+    renderChart(metric, label);
+}
+
+/**
+ * Render/update the Chart.js chart.
+ */
+function renderChart(metric, label) {
+    const cache = betHistoryCache[currentMarket.id];
+    if (!cache || !cache.timeline.length) return;
+
+    const answerMap = cache.answerMap;
+
+    // Build data points: convert answer-id-keyed probs to cell-type-keyed
+    const dataPoints = [];
+    for (const entry of cache.timeline) {
+        const jointProbs = {};
+        for (const [answerId, prob] of Object.entries(entry.probs)) {
+            const cellType = answerMap[answerId];
+            if (cellType) jointProbs[cellType] = prob;
+        }
+
+        // Only include if we have all 4 cells
+        if (Object.keys(jointProbs).length === 4) {
+            const value = computeMetricFromJoints(jointProbs, metric);
+            dataPoints.push({ x: entry.time, y: value });
+        }
+    }
+
+    if (dataPoints.length === 0) return;
+
+    // Downsample if too many points (keep first, last, and evenly spaced)
+    const MAX_POINTS = 500;
+    let plotData = dataPoints;
+    if (dataPoints.length > MAX_POINTS) {
+        const step = (dataPoints.length - 1) / (MAX_POINTS - 1);
+        plotData = [];
+        for (let i = 0; i < MAX_POINTS; i++) {
+            plotData.push(dataPoints[Math.round(i * step)]);
+        }
+    }
+
+    const isProbMetric = metricIsProbability(metric);
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+
+    const chartConfig = {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: label,
+                data: plotData,
+                borderColor: accentColor,
+                backgroundColor: accentColor + '33',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                pointHitRadius: 8,
+                fill: isProbMetric,
+                tension: 0.1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => {
+                            if (items.length === 0) return '';
+                            return new Date(items[0].parsed.x).toLocaleDateString('en-US', {
+                                month: 'short', day: 'numeric', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit'
+                            });
+                        },
+                        label: (item) => formatMetricValue(item.parsed.y, metric)
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: {
+                        tooltipFormat: 'MMM d, yyyy HH:mm',
+                        displayFormats: {
+                            hour: 'MMM d HH:mm',
+                            day: 'MMM d',
+                            week: 'MMM d',
+                            month: 'MMM yyyy'
+                        }
+                    },
+                    ticks: {
+                        color: '#a0a0a0',
+                        maxTicksLimit: 6,
+                        font: { size: 10 }
+                    },
+                    grid: { color: '#333' }
+                },
+                y: {
+                    min: isProbMetric ? 0 : undefined,
+                    max: isProbMetric ? 1 : undefined,
+                    ticks: {
+                        color: '#a0a0a0',
+                        font: { size: 10 },
+                        callback: (val) => formatMetricValue(val, metric)
+                    },
+                    grid: { color: '#333' }
+                }
+            }
+        }
+    };
+
+    const canvas = document.getElementById('history-chart');
+    if (historyChart) {
+        historyChart.destroy();
+    }
+    // Set explicit height for the canvas container
+    canvas.parentElement.style.height = '250px';
+    historyChart = new Chart(canvas, chartConfig);
+}
+
+/**
+ * Clear the chart cache (e.g., when switching markets).
+ */
+function clearChartCache() {
+    if (historyChart) {
+        historyChart.destroy();
+        historyChart = null;
+    }
+    currentChartMetric = null;
+    document.getElementById('chart-panel').classList.add('hidden');
+}
+
+/**
+ * Get the chart metric and label for a cell selection.
+ * Called from the cell click handlers.
+ */
+function chartMetricForJointCell(cellType) {
+    const labels = {
+        'a_yes_b_yes': `P(${currentMarketConfig.labelA} & ${currentMarketConfig.labelB})`,
+        'a_yes_b_no':  `P(${currentMarketConfig.labelA} & ~${currentMarketConfig.labelB})`,
+        'a_no_b_yes':  `P(~${currentMarketConfig.labelA} & ${currentMarketConfig.labelB})`,
+        'a_no_b_no':   `P(~${currentMarketConfig.labelA} & ~${currentMarketConfig.labelB})`
+    };
+    return { metric: cellType, label: labels[cellType] || cellType };
+}
+
+function chartMetricForMarginal(marginalType) {
+    const labels = {
+        'a':     `P(${currentMarketConfig.labelA})`,
+        'not_a': `P(~${currentMarketConfig.labelA})`,
+        'b':     `P(${currentMarketConfig.labelB})`,
+        'not_b': `P(~${currentMarketConfig.labelB})`
+    };
+    return { metric: 'marginal_' + marginalType, label: labels[marginalType] || marginalType };
+}
+
+function chartMetricForConditional(condType) {
+    const labels = {
+        'a_given_b':     `P(${currentMarketConfig.labelA}|${currentMarketConfig.labelB})`,
+        'a_given_not_b': `P(${currentMarketConfig.labelA}|~${currentMarketConfig.labelB})`,
+        'b_given_a':     `P(${currentMarketConfig.labelB}|${currentMarketConfig.labelA})`,
+        'b_given_not_a': `P(${currentMarketConfig.labelB}|~${currentMarketConfig.labelA})`
+    };
+    return { metric: condType, label: labels[condType] || condType };
+}
+
+function chartMetricForStat(statType) {
+    const labels = {
+        'correlation': 'Correlation (A,B)',
+        'lift_a': `Lift P(A|B)/P(A)`,
+        'lift_b': `Lift P(B|A)/P(B)`,
+        'odds_ratio': 'Odds Ratio'
+    };
+    return { metric: statType, label: labels[statType] || statType };
 }
 
 // UI Helpers
