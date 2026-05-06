@@ -17,8 +17,13 @@
     <div class="container">
         <header>
             <h1>Conditional Markets Viewer</h1>
-            <p class="subtitle">View and bet on joint probability markets</p>
+            <p class="subtitle">View and bet on joint &amp; numeric markets</p>
         </header>
+
+        <nav class="tab-bar">
+            <button class="tab-btn active" data-tab="matrix">2×2 Matrix</button>
+            <button class="tab-btn" data-tab="numeric">Numeric Range</button>
+        </nav>
 
         <section class="controls">
             <div class="control-group">
@@ -302,6 +307,70 @@
             </div>
         </section>
 
+        <section id="numeric-container" class="numeric-container hidden">
+            <div class="numeric-and-chart">
+                <div class="numeric-table-wrapper">
+                    <div class="numeric-toolbar">
+                        <span class="numeric-toolbar-label">Quick:</span>
+                        <button class="numeric-quick-btn" data-quick="all">All</button>
+                        <button class="numeric-quick-btn" data-quick="none">None</button>
+                        <span class="numeric-summary">
+                            P(selected) = <span id="numeric-selected-prob">--</span>
+                        </span>
+                    </div>
+
+                    <table class="numeric-table">
+                        <thead>
+                            <tr>
+                                <th class="num-col-label">Outcome</th>
+                                <th class="num-col-pdf" colspan="2">P(=)</th>
+                                <th class="num-col-cdf">P(≥)</th>
+                                <th class="num-col-select">Select</th>
+                                <th class="num-col-quick">Range from here</th>
+                            </tr>
+                        </thead>
+                        <tbody id="numeric-rows"></tbody>
+                    </table>
+                    <div id="numeric-other-section" class="numeric-other-section hidden"></div>
+                </div>
+
+                <div id="numeric-chart-panel" class="chart-panel hidden">
+                    <div class="chart-panel-header">
+                        <h3 id="numeric-chart-title">History</h3>
+                        <div class="chart-loading hidden" id="numeric-chart-loading">
+                            <div class="spinner-small"></div>
+                        </div>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="numeric-history-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div id="numeric-bet-panel" class="bet-panel">
+                <div class="bet-panel-header">
+                    <h3 id="numeric-bet-panel-title">Multi-bet</h3>
+                </div>
+                <div class="bet-panel-body">
+                    <p id="numeric-bet-description">Select outcomes above to preview a multi-bet.</p>
+
+                    <div class="bet-input-row">
+                        <label for="numeric-bet-amount">Amount (M$):</label>
+                        <input type="number" id="numeric-bet-amount" min="1" value="10" step="1">
+                        <button id="numeric-validate-btn" class="btn-secondary">Validate</button>
+                        <button id="numeric-execute-btn" class="btn-primary">Place Multi-Bet</button>
+                    </div>
+
+                    <div class="trade-preview" id="numeric-trade-preview">
+                        <h4>Trade Preview <span id="numeric-validation-status" class="validation-status"></span></h4>
+                        <div id="numeric-trade-summary" class="trade-summary"></div>
+                        <div id="numeric-trade-plan" class="trade-plan"></div>
+                        <div id="numeric-validation-details" class="validation-details hidden"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Bet Dialog -->
         <div id="bet-dialog" class="dialog-overlay hidden">
             <div class="dialog">
@@ -397,6 +466,55 @@
                 <div class="dialog-footer">
                     <button id="config-cancel" class="btn-secondary">Cancel</button>
                     <button id="config-save" class="btn-primary" disabled>Save & Load</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Numeric Market Configuration Dialog -->
+        <div id="numeric-config-dialog" class="dialog-overlay hidden">
+            <div class="dialog config-dialog">
+                <div class="dialog-header">
+                    <h3>Configure Numeric Market</h3>
+                    <button class="close-btn" id="close-numeric-config-dialog">&times;</button>
+                </div>
+                <div class="dialog-body">
+                    <div id="numeric-config-step-slug" class="config-step">
+                        <div class="config-input-row">
+                            <label for="numeric-config-slug">Market Slug:</label>
+                            <input type="text" id="numeric-config-slug" placeholder="e.g., how-many-seats-will-the-democrats-h">
+                            <button id="numeric-config-fetch-btn" class="btn-primary">Fetch</button>
+                        </div>
+                        <p class="config-hint">
+                            Linked multi-choice market (sums to one). Each answer becomes a numeric bucket.
+                        </p>
+                        <div id="numeric-config-fetch-error" class="config-error hidden"></div>
+                    </div>
+
+                    <div id="numeric-config-step-map" class="config-step hidden">
+                        <h4 id="numeric-config-market-title"></h4>
+
+                        <div class="config-labels">
+                            <div class="config-label-input">
+                                <label for="numeric-config-name">Display name:</label>
+                                <input type="text" id="numeric-config-name" placeholder="e.g., Senate Seats 2026">
+                            </div>
+                            <div class="config-label-input">
+                                <label for="numeric-config-value-label">Value label (optional):</label>
+                                <input type="text" id="numeric-config-value-label" placeholder="e.g., Senate seats">
+                            </div>
+                        </div>
+
+                        <div class="config-answers">
+                            <p>Assign each answer a numeric range. Use blank for an open tail (≤max or ≥min). Mark "Other" if it's a non-numeric catch-all.</p>
+                            <div id="numeric-config-answer-list" class="numeric-config-answer-list"></div>
+                        </div>
+
+                        <div id="numeric-config-map-error" class="config-error hidden"></div>
+                    </div>
+                </div>
+                <div class="dialog-footer">
+                    <button id="numeric-config-cancel" class="btn-secondary">Cancel</button>
+                    <button id="numeric-config-save" class="btn-primary" disabled>Save & Load</button>
                 </div>
             </div>
         </div>

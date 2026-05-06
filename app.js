@@ -311,12 +311,22 @@ const resultDialog = document.getElementById('result-dialog');
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-    await loadMarketList();
+    setupTabs();
     loadApiKey();
     setupEventListeners();
 
-    // Deep link: auto-select market from URL hash (e.g., #will-democrats-win-iowa-in-2026)
+    // Deep link: pick the matching tab before populating the dropdown so the option exists
     const hash = window.location.hash.slice(1);
+    if (hash) {
+        const config = await findMarketConfigBySlug(hash);
+        if (config) {
+            currentTab = marketType(config) === 'numeric' ? 'numeric' : 'matrix';
+            updateTabButtons();
+        }
+    }
+
+    await loadMarketList();
+
     if (hash) {
         const option = marketSelect.querySelector(`option[value="${CSS.escape(hash)}"]`);
         if (option) {
@@ -324,6 +334,19 @@ async function init() {
             const config = JSON.parse(option.dataset.config);
             await loadMarket(config);
         }
+    }
+}
+
+async function findMarketConfigBySlug(slug) {
+    try {
+        const response = await fetch('markets.json');
+        const builtIn = await response.json();
+        const fromBuiltIn = builtIn.find(m => m.slug === slug);
+        if (fromBuiltIn) return fromBuiltIn;
+        const custom = getCustomMarkets();
+        return custom.find(m => m.slug === slug) || null;
+    } catch {
+        return null;
     }
 }
 
@@ -341,11 +364,18 @@ async function loadMarketList() {
         // Load custom markets from localStorage
         const customMarkets = getCustomMarkets();
 
-        // Add built-in markets
-        if (builtInMarkets.length > 0) {
+        const activeTab = currentTab || 'matrix';
+        const wantedType = activeTab === 'numeric' ? 'numeric' : 'matrix2x2';
+
+        const filterByType = list => list.filter(m => marketType(m) === wantedType);
+
+        const builtInForTab = filterByType(builtInMarkets);
+        const customForTab = filterByType(customMarkets);
+
+        if (builtInForTab.length > 0) {
             const builtInGroup = document.createElement('optgroup');
             builtInGroup.label = 'Built-in Markets';
-            builtInMarkets.forEach(market => {
+            builtInForTab.forEach(market => {
                 const option = document.createElement('option');
                 option.value = market.slug;
                 option.textContent = market.name;
@@ -355,11 +385,10 @@ async function loadMarketList() {
             marketSelect.appendChild(builtInGroup);
         }
 
-        // Add custom markets if any
-        if (customMarkets.length > 0) {
+        if (customForTab.length > 0) {
             const customGroup = document.createElement('optgroup');
             customGroup.label = 'Your Markets';
-            customMarkets.forEach(market => {
+            customForTab.forEach(market => {
                 const option = document.createElement('option');
                 option.value = market.slug;
                 option.textContent = market.name;
@@ -373,7 +402,9 @@ async function loadMarketList() {
         // Add "Configure new..." option
         const configOption = document.createElement('option');
         configOption.value = '__configure__';
-        configOption.textContent = '+ Configure new market...';
+        configOption.textContent = wantedType === 'numeric'
+            ? '+ Configure new numeric market...'
+            : '+ Configure new 2×2 market...';
         marketSelect.appendChild(configOption);
 
     } catch (error) {
@@ -772,9 +803,13 @@ async function onMarketSelect(event) {
         return;
     }
 
-    // Special case: configure new market
+    // Special case: configure new market — choose dialog by active tab
     if (slug === '__configure__') {
-        openConfigDialog();
+        if (currentTab === 'numeric') {
+            openNumericConfigDialog();
+        } else {
+            openConfigDialog();
+        }
         // Reset dropdown to placeholder
         marketSelect.value = '';
         return;
@@ -785,6 +820,10 @@ async function onMarketSelect(event) {
     await loadMarket(config);
 }
 
+function marketType(config) {
+    return (config && config.type) || 'matrix2x2';
+}
+
 async function loadMarket(config) {
     currentMarketConfig = config;
     // Update URL hash for deep linking
@@ -793,11 +832,19 @@ async function loadMarket(config) {
     showLoading();
     hideError();
 
+    // Switch tabs to match the market's type
+    setActiveTab(marketType(config));
+
     try {
         const market = await fetchMarket(config.slug);
         currentMarket = market;
 
-        // Parse probabilities from answers
+        if (marketType(config) === 'numeric') {
+            await loadNumericMarket(market, config);
+            return;
+        }
+
+        // Matrix view (default)
         marketProbabilities = parseMarketProbabilities(market, config);
 
         // Fetch positions if authenticated
@@ -3531,6 +3578,7 @@ function chartMetricForStat(statType) {
 function showLoading() {
     loadingSection.classList.remove('hidden');
     matrixContainer.classList.add('hidden');
+    document.getElementById('numeric-container').classList.add('hidden');
     marketInfo.classList.add('hidden');
 }
 
@@ -3549,7 +3597,789 @@ function hideError() {
 
 function hideAll() {
     matrixContainer.classList.add('hidden');
+    document.getElementById('numeric-container').classList.add('hidden');
     marketInfo.classList.add('hidden');
     hideLoading();
     hideError();
 }
+
+// =============================================================================
+// Tabs
+// =============================================================================
+
+let currentTab = 'matrix';   // 'matrix' | 'numeric'
+
+function setupTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const tab = btn.dataset.tab;
+            if (tab === currentTab) return;
+            currentTab = tab;
+            updateTabButtons();
+            // Repopulate dropdown filtered by tab; clear current view.
+            hideAll();
+            currentMarket = null;
+            currentMarketConfig = null;
+            window.history.replaceState(null, '', window.location.pathname);
+            await loadMarketList();
+            marketSelect.value = '';
+        });
+    });
+    updateTabButtons();
+}
+
+function updateTabButtons() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === currentTab);
+    });
+}
+
+function setActiveTab(typeOrTab) {
+    const tab = (typeOrTab === 'numeric') ? 'numeric' : 'matrix';
+    if (tab === currentTab) return;
+    currentTab = tab;
+    updateTabButtons();
+    // Repopulate dropdown to match — caller is responsible for selecting the new value.
+    return loadMarketList();
+}
+
+// =============================================================================
+// Numeric Markets
+// =============================================================================
+
+// State
+let numericState = null;
+//   { config, market, buckets: [ {answerId, answerText, prob, pool, isOther,
+//                                 min, max, sortKey, indexInTable} ] }
+// Selection is `selected: Set<answerId>`
+// Note: buckets array is "non-Other" first (sorted), then "Other" entries appended.
+//       indexInTable is the 0-based position among non-Other rows for CDF math.
+
+function parseNumericMarket(market, config) {
+    if (!market.answers) {
+        throw new Error('Market has no answers');
+    }
+    if (market.mechanism !== 'cpmm-multi-1' || !market.shouldAnswersSumToOne) {
+        throw new Error('Numeric view requires linked multi-choice (sums-to-one) market');
+    }
+
+    // Build a map from answerText -> bucket spec from config
+    const specByText = {};
+    for (const spec of (config.buckets || [])) {
+        specByText[spec.answerText] = spec;
+    }
+
+    const buckets = [];
+    for (const answer of market.answers) {
+        const spec = specByText[answer.text];
+        if (!spec) {
+            console.warn('No bucket spec for answer:', answer.text);
+            continue;
+        }
+        const min = spec.min;  // may be undefined (open lower)
+        const max = spec.max;  // may be undefined (open upper)
+        const isOther = !!spec.isOther;
+        // sortKey: use min if set, else max (tail buckets), else +inf for Other
+        let sortKey;
+        if (isOther) sortKey = Infinity;
+        else if (min != null) sortKey = min;
+        else if (max != null) sortKey = max - 0.5;  // place ≤max just below value max
+        else sortKey = 0;
+        buckets.push({
+            answerId: answer.id,
+            answerText: answer.text,
+            prob: answer.probability || 0,
+            pool: answer.pool || null,
+            isOther,
+            min,
+            max,
+            sortKey,
+        });
+    }
+
+    // Sort: Other to end, otherwise by sortKey then max
+    buckets.sort((a, b) => {
+        if (a.isOther && !b.isOther) return 1;
+        if (!a.isOther && b.isOther) return -1;
+        if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+        return (a.max ?? Infinity) - (b.max ?? Infinity);
+    });
+
+    // Index non-Other rows for CDF math
+    let i = 0;
+    for (const b of buckets) {
+        b.indexInTable = b.isOther ? null : i++;
+    }
+
+    return { config, market, buckets };
+}
+
+async function loadNumericMarket(market, config) {
+    try {
+        const parsed = parseNumericMarket(market, config);
+        numericState = { ...parsed, selected: new Set() };
+
+        displayMarketInfo(market);
+        renderNumericTable();
+        updatePanelPreviewNumeric();
+
+        hideLoading();
+        document.getElementById('numeric-container').classList.remove('hidden');
+        marketInfo.classList.remove('hidden');
+    } catch (e) {
+        console.error('Failed to load numeric market:', e);
+        hideLoading();
+        showError(`Failed to load numeric market: ${e.message}`);
+    }
+}
+
+function renderNumericTable() {
+    if (!numericState) return;
+    const { buckets } = numericState;
+
+    const tbody = document.getElementById('numeric-rows');
+    tbody.innerHTML = '';
+
+    const numericBuckets = buckets.filter(b => !b.isOther);
+    const otherBuckets = buckets.filter(b => b.isOther);
+
+    // Compute CDF P(>=) for each numeric row, in sort order:
+    //   cdf[i] = sum_{j >= i} prob[j]   (Other not included)
+    let runningSum = 0;
+    const totalNumericProb = numericBuckets.reduce((s, b) => s + b.prob, 0);
+    const cdf = [];
+    runningSum = totalNumericProb;
+    for (let i = 0; i < numericBuckets.length; i++) {
+        cdf[i] = runningSum;
+        runningSum -= numericBuckets[i].prob;
+    }
+
+    // Find max prob for bar scaling
+    const maxProb = Math.max(0.0001, ...numericBuckets.map(b => b.prob));
+
+    numericBuckets.forEach((b, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'numeric-row';
+        tr.dataset.answerId = b.answerId;
+
+        const isSelected = numericState.selected.has(b.answerId);
+        if (isSelected) tr.classList.add('selected');
+
+        const barWidthPct = (b.prob / maxProb) * 100;
+
+        tr.innerHTML = `
+            <td class="num-cell-label">${escapeHtml(b.answerText)}</td>
+            <td class="num-cell-bar"><div class="num-pdf-bar" style="width: ${barWidthPct}%"></div></td>
+            <td class="num-cell-pdf">${formatProb(b.prob)}</td>
+            <td class="num-cell-cdf">${formatProb(cdf[i])}</td>
+            <td class="num-cell-select">
+                <input type="checkbox" data-answer-id="${b.answerId}" ${isSelected ? 'checked' : ''}>
+            </td>
+            <td class="num-cell-quick">
+                <button class="num-quick-btn" data-quick-row="${b.answerId}" data-op="ge" title="Select this and all higher">≥</button>
+                <button class="num-quick-btn" data-quick-row="${b.answerId}" data-op="le" title="Select this and all lower">≤</button>
+                <button class="num-quick-btn" data-quick-row="${b.answerId}" data-op="eq" title="Select only this">=</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Wire row clicks (toggles checkbox)
+    tbody.querySelectorAll('tr.numeric-row').forEach(tr => {
+        tr.addEventListener('click', e => {
+            // Don't double-toggle when clicking inside controls.
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            const aid = tr.dataset.answerId;
+            toggleSelection(aid);
+        });
+    });
+    tbody.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            toggleSelection(cb.dataset.answerId, cb.checked);
+        });
+    });
+    tbody.querySelectorAll('.num-quick-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            const op = btn.dataset.op;
+            const aid = btn.dataset.quickRow;
+            applyRangeQuick(aid, op);
+        });
+        // Hover preview: highlight which rows would be selected
+        btn.addEventListener('mouseenter', () => previewRangeQuick(btn.dataset.quickRow, btn.dataset.op, true));
+        btn.addEventListener('mouseleave', () => previewRangeQuick(btn.dataset.quickRow, btn.dataset.op, false));
+    });
+
+    // "Other" section
+    const otherEl = document.getElementById('numeric-other-section');
+    if (otherBuckets.length === 0) {
+        otherEl.classList.add('hidden');
+        otherEl.innerHTML = '';
+    } else {
+        otherEl.classList.remove('hidden');
+        let html = '';
+        for (const b of otherBuckets) {
+            const isSelected = numericState.selected.has(b.answerId);
+            html += `
+                <div class="numeric-other-row">
+                    <span class="num-cell-label">${escapeHtml(b.answerText)}</span>
+                    <span></span>
+                    <span class="num-cell-pdf">${formatProb(b.prob)}</span>
+                    <span class="num-cell-select">
+                        <input type="checkbox" data-answer-id="${b.answerId}" ${isSelected ? 'checked' : ''}>
+                    </span>
+                    <span class="numeric-other-note">
+                        "Other" sits outside the ordered range — the creator may add new
+                        higher or lower buckets later, so it can resolve to either tail.
+                        Quick-select buttons (≥/≤/All) skip it; check the box manually if
+                        you want to include it.
+                    </span>
+                </div>`;
+        }
+        otherEl.innerHTML = html;
+        otherEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                toggleSelection(cb.dataset.answerId, cb.checked);
+            });
+        });
+    }
+
+    updateSelectedSummary();
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function toggleSelection(answerId, force) {
+    if (!numericState) return;
+    const has = numericState.selected.has(answerId);
+    const want = (force === undefined) ? !has : !!force;
+    if (want === has) return;
+    if (want) numericState.selected.add(answerId);
+    else numericState.selected.delete(answerId);
+    refreshSelectionUI();
+    updatePanelPreviewNumeric();
+    clearNumericValidation();
+}
+
+function refreshSelectionUI() {
+    if (!numericState) return;
+    document.querySelectorAll('#numeric-rows tr.numeric-row').forEach(tr => {
+        const aid = tr.dataset.answerId;
+        const sel = numericState.selected.has(aid);
+        tr.classList.toggle('selected', sel);
+        const cb = tr.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = sel;
+    });
+    document.querySelectorAll('#numeric-other-section input[type="checkbox"]').forEach(cb => {
+        cb.checked = numericState.selected.has(cb.dataset.answerId);
+    });
+    updateSelectedSummary();
+}
+
+function updateSelectedSummary() {
+    if (!numericState) return;
+    let sum = 0;
+    for (const b of numericState.buckets) {
+        if (numericState.selected.has(b.answerId)) sum += b.prob;
+    }
+    document.getElementById('numeric-selected-prob').textContent = formatProb(sum);
+}
+
+// ---- Quick-select operations ----
+
+function applyRangeQuick(pivotAnswerId, op) {
+    if (!numericState) return;
+    const numericBuckets = numericState.buckets.filter(b => !b.isOther);
+    const pivot = numericBuckets.find(b => b.answerId === pivotAnswerId);
+    if (!pivot) return;
+    const idx = pivot.indexInTable;
+
+    numericState.selected = new Set();
+    if (op === 'eq') {
+        numericState.selected.add(pivot.answerId);
+    } else if (op === 'ge') {
+        for (const b of numericBuckets) {
+            if (b.indexInTable >= idx) numericState.selected.add(b.answerId);
+        }
+    } else if (op === 'le') {
+        for (const b of numericBuckets) {
+            if (b.indexInTable <= idx) numericState.selected.add(b.answerId);
+        }
+    }
+    refreshSelectionUI();
+    updatePanelPreviewNumeric();
+    clearNumericValidation();
+}
+
+function previewRangeQuick(pivotAnswerId, op, on) {
+    if (!numericState) return;
+    document.querySelectorAll('#numeric-rows tr.numeric-row').forEach(tr => {
+        tr.classList.remove('in-cdf-hover');
+    });
+    if (!on) return;
+    const numericBuckets = numericState.buckets.filter(b => !b.isOther);
+    const pivot = numericBuckets.find(b => b.answerId === pivotAnswerId);
+    if (!pivot) return;
+    const idx = pivot.indexInTable;
+    document.querySelectorAll('#numeric-rows tr.numeric-row').forEach(tr => {
+        const aid = tr.dataset.answerId;
+        const b = numericBuckets.find(x => x.answerId === aid);
+        if (!b) return;
+        const matches = (op === 'eq' && b.indexInTable === idx) ||
+                        (op === 'ge' && b.indexInTable >= idx) ||
+                        (op === 'le' && b.indexInTable <= idx);
+        if (matches) tr.classList.add('in-cdf-hover');
+    });
+}
+
+function applyAllNoneQuick(op) {
+    if (!numericState) return;
+    if (op === 'all') {
+        // "All" means all numeric buckets, NOT Other (Other can be toggled separately).
+        numericState.selected = new Set(
+            numericState.buckets.filter(b => !b.isOther).map(b => b.answerId)
+        );
+    } else {
+        numericState.selected = new Set();
+    }
+    refreshSelectionUI();
+    updatePanelPreviewNumeric();
+    clearNumericValidation();
+}
+
+// ---- Trade preview & execution ----
+
+function updatePanelPreviewNumeric() {
+    if (!numericState) return;
+    const panel = document.getElementById('numeric-bet-panel');
+    const summaryEl = document.getElementById('numeric-trade-summary');
+    const planEl = document.getElementById('numeric-trade-plan');
+    const descEl = document.getElementById('numeric-bet-description');
+    const titleEl = document.getElementById('numeric-bet-panel-title');
+    const validateBtn = document.getElementById('numeric-validate-btn');
+    const executeBtn = document.getElementById('numeric-execute-btn');
+
+    const selected = numericState.buckets.filter(b => numericState.selected.has(b.answerId));
+    if (selected.length === 0) {
+        panel.classList.add('empty');
+        titleEl.textContent = 'Multi-bet';
+        descEl.textContent = 'Select outcomes above to preview a multi-bet.';
+        summaryEl.innerHTML = '';
+        planEl.innerHTML = '';
+        validateBtn.disabled = true;
+        executeBtn.disabled = true;
+        return;
+    }
+
+    panel.classList.remove('empty');
+    validateBtn.disabled = false;
+    executeBtn.disabled = false;
+
+    const amount = parseFloat(document.getElementById('numeric-bet-amount').value) || 0;
+    const sumP = selected.reduce((s, b) => s + b.prob, 0);
+
+    titleEl.textContent = `Multi-bet on ${describeSelection(selected)}`;
+    descEl.textContent =
+        `If outcome lands in your selected set (${selected.length} of ${numericState.buckets.length} buckets), ` +
+        `each share you hold pays M$1.`;
+
+    // Equal-shares estimate: at current prices, M$X buys X / sumP shares of each.
+    // The actual /multi-bet endpoint binary-searches for shares S so total amount = X,
+    // including auto-arb savings — actual S will be ≥ this estimate.
+    const estShares = sumP > 0 ? amount / sumP : 0;
+
+    summaryEl.innerHTML = `
+        <div class="summary-row">
+            <span>P(union) at current price:</span>
+            <span><strong>${formatProb(sumP)}</strong></span>
+        </div>
+        <div class="summary-row">
+            <span>Est. shares per bucket:</span>
+            <span>${estShares.toFixed(1)}</span>
+        </div>
+        <div class="summary-row">
+            <span>Payout if union event happens:</span>
+            <span>M$${estShares.toFixed(2)}</span>
+        </div>
+        <div class="summary-row total">
+            <span>Cost:</span>
+            <span>M$${amount.toFixed(2)}</span>
+        </div>
+        <div class="summary-row" style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.4rem;">
+            <span>Estimate uses current prices; exact fills depend on auto-arb. Validate for per-leg dry-run.</span>
+            <span></span>
+        </div>
+    `;
+
+    let legsHtml = '';
+    for (const b of selected) {
+        const perLegCost = sumP > 0 ? amount * (b.prob / sumP) : 0;
+        legsHtml += `
+            <div class="numeric-trade-leg">
+                <span class="leg-label">${escapeHtml(b.answerText)} <span style="color: var(--text-secondary)">(${formatProb(b.prob)})</span></span>
+                <span class="leg-shares">${estShares.toFixed(1)} sh</span>
+                <span class="leg-cost">M$${perLegCost.toFixed(2)}</span>
+            </div>`;
+    }
+    planEl.innerHTML = legsHtml;
+}
+
+function describeSelection(selected) {
+    if (selected.length === 0) return '(none)';
+    if (selected.length === 1) return selected[0].answerText;
+    // Detect contiguous-from-bottom or contiguous-to-top patterns
+    const numeric = selected.filter(b => !b.isOther).sort((a, b) => a.indexInTable - b.indexInTable);
+    const allNumeric = numericState.buckets.filter(b => !b.isOther);
+    if (numeric.length === selected.length && numeric.length >= 2) {
+        const first = numeric[0];
+        const last = numeric[numeric.length - 1];
+        const isContiguous = last.indexInTable - first.indexInTable === numeric.length - 1;
+        if (isContiguous) {
+            if (first.indexInTable === 0) return `≤${last.answerText}`;
+            if (last.indexInTable === allNumeric.length - 1) return `≥${first.answerText}`;
+            return `${first.answerText}…${last.answerText}`;
+        }
+    }
+    return `${selected.length} buckets`;
+}
+
+function clearNumericValidation() {
+    document.getElementById('numeric-validation-status').textContent = '';
+    document.getElementById('numeric-validation-status').className = 'validation-status';
+    document.getElementById('numeric-validation-details').classList.add('hidden');
+    document.getElementById('numeric-validation-details').innerHTML = '';
+}
+
+async function validateNumericMultiBet() {
+    if (!numericState) return;
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        showError('Please enter your Manifold API key to validate');
+        return;
+    }
+    const selected = numericState.buckets.filter(b => numericState.selected.has(b.answerId));
+    if (selected.length === 0) return;
+
+    const amount = parseFloat(document.getElementById('numeric-bet-amount').value) || 0;
+    if (amount < 1) return;
+
+    const statusEl = document.getElementById('numeric-validation-status');
+    const detailsEl = document.getElementById('numeric-validation-details');
+    statusEl.textContent = 'validating…';
+    statusEl.className = 'validation-status pending';
+
+    try {
+        const sumP = selected.reduce((s, b) => s + b.prob, 0);
+        const rows = [];
+        let dryShares = 0;
+        let dryCost = 0;
+        for (const b of selected) {
+            const perLegAmount = sumP > 0 ? amount * (b.prob / sumP) : 0;
+            if (perLegAmount < 1) {
+                rows.push(`<div class="validation-row"><span class="label">${escapeHtml(b.answerText)}:</span>
+                    <span class="value" style="color: var(--warning)">below M$1 — skipped in per-leg dry-run</span></div>`);
+                continue;
+            }
+            const dry = await placeBetDryRun(currentMarket.id, b.answerId, 'YES', perLegAmount);
+            const sh = dry.shares ?? 0;
+            const cost = dry.amount ?? perLegAmount;
+            dryShares += sh;
+            dryCost += cost;
+            rows.push(`<div class="validation-row">
+                <span class="label">${escapeHtml(b.answerText)}:</span>
+                <span class="value">${sh.toFixed(1)} sh @ M$${cost.toFixed(2)}</span>
+            </div>`);
+        }
+        statusEl.textContent = '✓ dry-run complete';
+        statusEl.className = 'validation-status valid';
+        detailsEl.innerHTML = rows.join('') + `
+            <div class="validation-row" style="margin-top:0.4rem;">
+                <span class="label">Per-leg total:</span>
+                <span class="value">M$${dryCost.toFixed(2)} (~${(dryShares / selected.length).toFixed(1)} avg shares)</span>
+            </div>
+            <div class="validation-row" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.3rem;">
+                <span>Per-leg dry-run does not see cross-leg auto-arb. Actual /multi-bet will give equal shares and may net slightly more.</span>
+                <span></span>
+            </div>
+        `;
+        detailsEl.classList.remove('hidden');
+    } catch (e) {
+        statusEl.textContent = '✗ failed';
+        statusEl.className = 'validation-status invalid';
+        detailsEl.innerHTML = `<div class="validation-row" style="color: var(--error)">${escapeHtml(e.message)}</div>`;
+        detailsEl.classList.remove('hidden');
+    }
+}
+
+async function placeMultiBetApi(apiKey, contractId, answerIds, amount) {
+    const response = await fetch(`${API_BASE}/multi-bet`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Key ${apiKey}`
+        },
+        body: JSON.stringify({ contractId, answerIds, amount })
+    });
+    if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`API error ${response.status}: ${error}`);
+    }
+    return response.json();
+}
+
+async function executeNumericMultiBet() {
+    if (!numericState) return;
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+        showError('Please enter your Manifold API key to place bets');
+        return;
+    }
+    const selected = numericState.buckets.filter(b => numericState.selected.has(b.answerId));
+    if (selected.length === 0) return;
+
+    const amount = parseFloat(document.getElementById('numeric-bet-amount').value) || 0;
+    if (amount < 1) {
+        showError('Amount must be ≥ M$1');
+        return;
+    }
+
+    const executeBtn = document.getElementById('numeric-execute-btn');
+    executeBtn.disabled = true;
+    executeBtn.textContent = 'Placing…';
+
+    try {
+        const result = await placeMultiBetApi(
+            apiKey,
+            currentMarket.id,
+            selected.map(b => b.answerId),
+            amount,
+        );
+        const totalShares = (result || []).reduce((s, b) => s + (b.shares || 0), 0);
+        const totalAmount = (result || []).reduce((s, b) => s + (b.amount || 0), 0);
+        showResultDialog(
+            'Multi-Bet Placed',
+            `Placed ${result.length} bets. Total shares: ${totalShares.toFixed(1)}. Cost: M$${totalAmount.toFixed(2)}.`,
+            false,
+        );
+        // Refresh the market view
+        await loadMarket(currentMarketConfig);
+    } catch (e) {
+        showError(`Multi-bet failed: ${e.message}`);
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.textContent = 'Place Multi-Bet';
+    }
+}
+
+// Wire numeric panel events once DOM is ready
+function wireNumericPanelEvents() {
+    document.getElementById('numeric-bet-amount').addEventListener('input', () => {
+        updatePanelPreviewNumeric();
+        clearNumericValidation();
+    });
+    document.getElementById('numeric-validate-btn').addEventListener('click', validateNumericMultiBet);
+    document.getElementById('numeric-execute-btn').addEventListener('click', executeNumericMultiBet);
+
+    document.querySelectorAll('.numeric-quick-btn').forEach(btn => {
+        btn.addEventListener('click', () => applyAllNoneQuick(btn.dataset.quick));
+    });
+}
+
+document.addEventListener('DOMContentLoaded', wireNumericPanelEvents);
+
+// =============================================================================
+// Numeric Config Dialog
+// =============================================================================
+
+let numericConfigFetchedMarket = null;
+
+function openNumericConfigDialog() {
+    const dialog = document.getElementById('numeric-config-dialog');
+    document.getElementById('numeric-config-step-slug').classList.remove('hidden');
+    document.getElementById('numeric-config-step-map').classList.add('hidden');
+    document.getElementById('numeric-config-slug').value = '';
+    document.getElementById('numeric-config-name').value = '';
+    document.getElementById('numeric-config-value-label').value = '';
+    document.getElementById('numeric-config-fetch-error').classList.add('hidden');
+    document.getElementById('numeric-config-map-error').classList.add('hidden');
+    document.getElementById('numeric-config-save').disabled = true;
+    numericConfigFetchedMarket = null;
+    dialog.classList.remove('hidden');
+    document.getElementById('numeric-config-slug').focus();
+}
+
+function closeNumericConfigDialog() {
+    document.getElementById('numeric-config-dialog').classList.add('hidden');
+    numericConfigFetchedMarket = null;
+}
+
+async function fetchMarketForNumericConfig() {
+    const slugInput = document.getElementById('numeric-config-slug');
+    const errorDiv = document.getElementById('numeric-config-fetch-error');
+    const fetchBtn = document.getElementById('numeric-config-fetch-btn');
+
+    const slug = slugInput.value.trim();
+    if (!slug) {
+        errorDiv.textContent = 'Please enter a market slug';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    errorDiv.classList.add('hidden');
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = 'Loading…';
+
+    try {
+        const market = await fetchMarket(slug);
+        if (market.mechanism !== 'cpmm-multi-1' || !market.shouldAnswersSumToOne) {
+            throw new Error('Need a linked multi-choice market (sums to one).');
+        }
+        if (market.isResolved) {
+            throw new Error('Market is resolved. Choose an active market.');
+        }
+        numericConfigFetchedMarket = market;
+        showNumericConfigMappingStep(market);
+    } catch (e) {
+        errorDiv.textContent = e.message;
+        errorDiv.classList.remove('hidden');
+    } finally {
+        fetchBtn.disabled = false;
+        fetchBtn.textContent = 'Fetch';
+    }
+}
+
+function showNumericConfigMappingStep(market) {
+    document.getElementById('numeric-config-market-title').textContent = market.question;
+    document.getElementById('numeric-config-name').value = market.question.length > 40
+        ? market.question.substring(0, 40) + '…' : market.question;
+
+    const list = document.getElementById('numeric-config-answer-list');
+    list.innerHTML = '';
+
+    market.answers.forEach((answer, idx) => {
+        // Pre-fill: try to parse as a single int (most common case)
+        const trimmed = answer.text.trim();
+        const asInt = parseInt(trimmed, 10);
+        const isSimpleInt = !isNaN(asInt) && String(asInt) === trimmed;
+        // Detect "Other" by name
+        const looksLikeOther = /^other$/i.test(trimmed);
+
+        const row = document.createElement('div');
+        row.className = 'numeric-config-answer-row';
+        row.innerHTML = `
+            <span class="answer-text" title="${escapeHtml(answer.text)}">${escapeHtml(answer.text)}</span>
+            <input type="number" class="num-cfg-min" placeholder="min" data-idx="${idx}"
+                   value="${isSimpleInt ? asInt : ''}">
+            <input type="number" class="num-cfg-max" placeholder="max" data-idx="${idx}"
+                   value="${isSimpleInt ? asInt : ''}">
+            <label class="other-toggle">
+                <input type="checkbox" class="num-cfg-other" data-idx="${idx}" ${looksLikeOther ? 'checked' : ''}>
+                Other
+            </label>
+        `;
+        list.appendChild(row);
+    });
+
+    // Wire validation on change
+    list.querySelectorAll('input').forEach(input => {
+        input.addEventListener('change', validateNumericConfigMapping);
+        input.addEventListener('input', validateNumericConfigMapping);
+    });
+    document.getElementById('numeric-config-name').addEventListener('input', validateNumericConfigMapping);
+
+    document.getElementById('numeric-config-step-map').classList.remove('hidden');
+    validateNumericConfigMapping();
+}
+
+function validateNumericConfigMapping() {
+    const errorDiv = document.getElementById('numeric-config-map-error');
+    const saveBtn = document.getElementById('numeric-config-save');
+    const name = document.getElementById('numeric-config-name').value.trim();
+
+    let error = '';
+    if (!name) error = 'Display name required.';
+
+    const otherChecks = document.querySelectorAll('.num-cfg-other');
+    let assignedCount = 0;
+    if (!error) {
+        otherChecks.forEach((cb, i) => {
+            const isOther = cb.checked;
+            const min = document.querySelector(`.num-cfg-min[data-idx="${i}"]`).value;
+            const max = document.querySelector(`.num-cfg-max[data-idx="${i}"]`).value;
+            if (isOther) { assignedCount++; return; }
+            if (min === '' && max === '') {
+                if (!error) error = `Row ${i + 1}: set min and/or max, or check "Other".`;
+                return;
+            }
+            if (min !== '' && max !== '' && parseFloat(min) > parseFloat(max)) {
+                if (!error) error = `Row ${i + 1}: min > max.`;
+                return;
+            }
+            assignedCount++;
+        });
+    }
+
+    if (!error && assignedCount === 0) error = 'Assign at least one bucket.';
+
+    if (error) {
+        errorDiv.textContent = error;
+        errorDiv.classList.remove('hidden');
+        saveBtn.disabled = true;
+    } else {
+        errorDiv.classList.add('hidden');
+        saveBtn.disabled = false;
+    }
+}
+
+function saveNumericConfigAndLoad() {
+    if (!numericConfigFetchedMarket) return;
+    const market = numericConfigFetchedMarket;
+    const name = document.getElementById('numeric-config-name').value.trim();
+    const valueLabel = document.getElementById('numeric-config-value-label').value.trim();
+
+    const buckets = [];
+    market.answers.forEach((answer, i) => {
+        const isOther = document.querySelector(`.num-cfg-other[data-idx="${i}"]`).checked;
+        if (isOther) {
+            buckets.push({ answerText: answer.text, isOther: true });
+            return;
+        }
+        const minVal = document.querySelector(`.num-cfg-min[data-idx="${i}"]`).value;
+        const maxVal = document.querySelector(`.num-cfg-max[data-idx="${i}"]`).value;
+        const spec = { answerText: answer.text };
+        if (minVal !== '') spec.min = parseFloat(minVal);
+        if (maxVal !== '') spec.max = parseFloat(maxVal);
+        buckets.push(spec);
+    });
+
+    const config = {
+        name,
+        slug: market.slug,
+        type: 'numeric',
+        valueLabel: valueLabel || undefined,
+        buckets,
+    };
+
+    saveCustomMarket(config);
+    closeNumericConfigDialog();
+
+    loadMarketList().then(() => {
+        marketSelect.value = config.slug;
+        loadMarket(config);
+    });
+}
+
+function wireNumericConfigEvents() {
+    document.getElementById('close-numeric-config-dialog').addEventListener('click', closeNumericConfigDialog);
+    document.getElementById('numeric-config-cancel').addEventListener('click', closeNumericConfigDialog);
+    document.getElementById('numeric-config-fetch-btn').addEventListener('click', fetchMarketForNumericConfig);
+    document.getElementById('numeric-config-save').addEventListener('click', saveNumericConfigAndLoad);
+    document.getElementById('numeric-config-slug').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') fetchMarketForNumericConfig();
+    });
+}
+
+document.addEventListener('DOMContentLoaded', wireNumericConfigEvents);
