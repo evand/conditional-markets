@@ -319,12 +319,16 @@
                         </span>
                     </div>
 
+                    <div id="numeric-holdings-note" class="numeric-holdings-note hidden"></div>
+
                     <table class="numeric-table">
                         <thead>
                             <tr>
                                 <th class="num-col-label">Outcome</th>
                                 <th class="num-col-pdf" colspan="2">P(=)</th>
+                                <th class="num-col-held num-col-held-eq" title="Payout (M$) if the outcome lands exactly in this row">Held =</th>
                                 <th class="num-col-cdf">P(≥)</th>
+                                <th class="num-col-held num-col-held-ge" title="Equivalent net shares of the 'X ≥ this row' threshold (negative = short)">Held ≥</th>
                                 <th class="num-col-select">Select</th>
                                 <th class="num-col-quick">Range from here</th>
                             </tr>
@@ -485,7 +489,9 @@
                             <button id="numeric-config-fetch-btn" class="btn-primary">Fetch</button>
                         </div>
                         <p class="config-hint">
-                            Linked multi-choice market (sums to one). Each answer becomes a numeric bucket.
+                            Any numeric multi-choice market. <strong>Linked</strong> (sums-to-one) markets become
+                            buckets — each answer is a value/range. <strong>Independent</strong> markets become
+                            thresholds — each answer is an “X ≥ value” event (view &amp; holdings only).
                         </p>
                         <div id="numeric-config-fetch-error" class="config-error hidden"></div>
                     </div>
@@ -505,7 +511,7 @@
                         </div>
 
                         <div class="config-answers">
-                            <p>Assign each answer a numeric range. Use blank for an open tail (≤max or ≥min). Mark "Other" if it's a non-numeric catch-all.</p>
+                            <p id="numeric-config-map-help">Assign each answer a numeric range. Use blank for an open tail (≤max or ≥min). Mark "Other" if it's a non-numeric catch-all.</p>
                             <div id="numeric-config-answer-list" class="numeric-config-answer-list"></div>
                         </div>
 

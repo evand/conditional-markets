@@ -8,7 +8,7 @@ Items to do. Add freely, delete when done (move to Completed.md if it was signif
 - [ ] Numeric view: history chart for P(selected subset) over time (use existing bet-timeline machinery, sum probAfter across selected answers)
 - [ ] Numeric view: NO direction (sell / short the selected subset). multi-bet API is YES-only — would fall back to per-leg /bet calls
 - [ ] Numeric view: auto-detect bucket assignment in config dialog (parse "44", "0-4", "≤11", "≥16", "Other" from answer texts; user confirms)
-- [ ] Numeric view: positions display (current shares per bucket, P&L if you've held)
+- [ ] Numeric view: holdings P&L (cost basis vs current value) — shares-in-both-forms is done (Held =/Held ≥ columns), P&L still pending
 - [ ] Limit order detection/warning (affects validation accuracy)
 - [ ] Validate before live trade and abort / "trade anyway?"
 - [ ] **Correlation betting: multi-bet support** - Use multi-bet API for smaller trades
@@ -22,5 +22,6 @@ Items to do. Add freely, delete when done (move to Completed.md if it was signif
   - terence-tao-leaves-academia-for-an, will-jd-vance-win-the-2028-us-presi-qIQSEs6AcQ
 - [ ] higher outcome count market support e.g. will-the-us-attack-a-nato-member-an
 - [ ] Mutual information / phi coefficient display
-- [ ] Threshold-market view (independent MC, sumsToOne=False), e.g. how-many-house-seats-will-the-democ
-  - View-only with explainer comparing to bucket form (the threshold↔bucket equivalence demo)
+- [x] Threshold-market view (independent MC, sumsToOne=False), e.g. how-many-house-seats-will-the-democ
+  - Done: parsed as derived buckets, view + holdings only. Holdings shown in both forms (Held =/Held ≥)
+  - Betting on threshold markets (per-leg /bet to hit an arbitrary bucket) still TODO if wanted

@@ -1640,6 +1640,64 @@ button:disabled {
     color: var(--text-secondary);
 }
 
+/* ---- Holdings columns (shown only when the user holds a position) ---- */
+.num-cell-held,
+.numeric-table th.num-col-held {
+    text-align: right;
+    width: 64px;
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Hide the two Held columns until positions are loaded. */
+.numeric-container:not(.has-holdings) .num-col-held,
+.numeric-container:not(.has-holdings) .num-cell-held {
+    display: none;
+}
+
+.held-zero { color: var(--border); }
+.held-pay { color: var(--text-primary); font-weight: 600; }
+.held-long { color: var(--success); font-weight: 600; }
+.held-short { color: var(--accent); font-weight: 600; }
+
+.numeric-holdings-note {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0.7rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 4px;
+}
+.numeric-holdings-note strong { color: var(--text-primary); }
+.numeric-holdings-note .held-long { color: var(--success); }
+.numeric-holdings-note .held-short { color: var(--accent); }
+.numeric-holdings-note .nhn-structure,
+.numeric-holdings-note .nhn-other { color: var(--text-secondary); font-style: italic; }
+
+/* ---- Holdings-only mode: threshold markets have no tradeable buckets ---- */
+.numeric-container.holdings-only .num-col-select,
+.numeric-container.holdings-only .num-cell-select,
+.numeric-container.holdings-only .num-col-quick,
+.numeric-container.holdings-only .num-cell-quick,
+.numeric-container.holdings-only .numeric-toolbar,
+.numeric-container.holdings-only #numeric-bet-panel {
+    display: none;
+}
+.numeric-container.holdings-only .numeric-table tr.numeric-row {
+    cursor: default;
+}
+.numeric-container.holdings-only .numeric-table tr.numeric-row:hover {
+    background: transparent;
+}
+
+/* Config dialog: threshold "X ≥" prefix */
+.cfg-ge-prefix {
+    color: var(--text-secondary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+}
+
 .num-cell-select {
     text-align: center;
     width: 50px;
@@ -1683,7 +1741,7 @@ button:disabled {
 
 .numeric-other-row {
     display: grid;
-    grid-template-columns: 80px 1fr 60px 60px;
+    grid-template-columns: 80px 1fr 60px 64px 60px;
     align-items: center;
     gap: 0.75rem;
     font-size: 0.92rem;
@@ -1789,6 +1847,10 @@ button:disabled {
     background: var(--bg-secondary);
     border-radius: 4px;
     font-size: 0.88rem;
+}
+
+.numeric-config-answer-row.threshold-row {
+    grid-template-columns: 1fr auto 90px auto;
 }
 
 .numeric-config-answer-row .answer-text {

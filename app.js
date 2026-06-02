@@ -3649,20 +3649,50 @@ function setActiveTab(typeOrTab) {
 
 // State
 let numericState = null;
-//   { config, market, buckets: [ {answerId, answerText, prob, pool, isOther,
-//                                 min, max, sortKey, indexInTable} ] }
+//   { config, market, format, buckets: [ {answerId, answerText, prob, pool, isOther,
+//                                 min, max, lo, sortKey, indexInTable,
+//                                 payout, threshHold} ],
+//     positions, thresholdAnswers, hasHoldings }
 // Selection is `selected: Set<answerId>`
 // Note: buckets array is "non-Other" first (sorted), then "Other" entries appended.
 //       indexInTable is the 0-based position among non-Other rows for CDF math.
+//
+// Two source structures collapse onto the SAME ordered-bucket display:
+//   - 'buckets'    : linked multi-choice (sumsToOne=true). Each answer IS a bucket.
+//   - 'thresholds' : independent multi-choice (sumsToOne=false). Each answer is a
+//                    "X ≥ value" event; the ordered buckets are the intervals BETWEEN
+//                    the sorted threshold values. View + holdings only (no betting),
+//                    because a bucket no longer maps 1:1 to a tradeable answer.
+// Holdings are shown in both forms from one canonical payout vector f[k] = $ received
+// if the outcome lands in bucket k (see computeNumericPayouts). The "≥" holdings column
+// is the discrete difference m[k] = f[k] - f[k-1] (signed; negative = short / NO-side).
+
+function numericFormat(config) {
+    return config.format === 'thresholds' ? 'thresholds' : 'buckets';
+}
 
 function parseNumericMarket(market, config) {
     if (!market.answers) {
         throw new Error('Market has no answers');
     }
-    if (market.mechanism !== 'cpmm-multi-1' || !market.shouldAnswersSumToOne) {
-        throw new Error('Numeric view requires linked multi-choice (sums-to-one) market');
+    if (market.mechanism !== 'cpmm-multi-1') {
+        throw new Error('Numeric view requires a multi-choice (cpmm-multi-1) market');
     }
+    const format = numericFormat(config);
+    if (format === 'thresholds') {
+        if (market.shouldAnswersSumToOne) {
+            throw new Error('Threshold format expects an independent multi-choice market (sums-to-one = false)');
+        }
+        return parseThresholdMarket(market, config);
+    }
+    if (!market.shouldAnswersSumToOne) {
+        throw new Error('Bucket format expects a linked multi-choice (sums-to-one) market');
+    }
+    return parseBucketMarket(market, config);
+}
 
+// ---- Bucket format: each answer is a numeric bucket (the original numeric view) ----
+function parseBucketMarket(market, config) {
     // Build a map from answerText -> bucket spec from config
     const specByText = {};
     for (const spec of (config.buckets || [])) {
@@ -3693,10 +3723,88 @@ function parseNumericMarket(market, config) {
             isOther,
             min,
             max,
+            lo: min != null ? min : -Infinity,  // lower edge for the ≥ threshold
             sortKey,
         });
     }
 
+    sortAndIndexBuckets(buckets);
+    return { config, market, format: 'buckets', buckets, thresholdAnswers: [] };
+}
+
+// ---- Threshold format: each answer is "X ≥ value"; buckets are the gaps between ----
+function parseThresholdMarket(market, config) {
+    // Map answerText -> {value, isOther} from config.thresholds
+    const specByText = {};
+    for (const spec of (config.thresholds || [])) {
+        specByText[spec.answerText] = spec;
+    }
+
+    // Collect the threshold answers we can place on the number line (≥ value).
+    const thresholdAnswers = [];  // {answerId, answerText, value, prob}
+    const otherAnswers = [];      // {answerId, answerText, prob} — not orderable
+    for (const answer of market.answers) {
+        const spec = specByText[answer.text];
+        if (!spec || spec.isOther || spec.value == null) {
+            if (spec && spec.isOther) {
+                otherAnswers.push({ answerId: answer.id, answerText: answer.text, prob: answer.probability || 0 });
+            }
+            continue;
+        }
+        thresholdAnswers.push({
+            answerId: answer.id,
+            answerText: answer.text,
+            value: spec.value,
+            prob: answer.probability || 0,
+        });
+    }
+    if (thresholdAnswers.length === 0) {
+        throw new Error('No threshold answers mapped — assign a value to at least one answer.');
+    }
+
+    // Sorted distinct edge values V_1 < ... < V_M. P(≥V_j) = the answer's YES probability.
+    thresholdAnswers.sort((a, b) => a.value - b.value);
+    const probAtOrAbove = new Map();  // value -> P(X ≥ value)
+    for (const ta of thresholdAnswers) {
+        if (!probAtOrAbove.has(ta.value)) probAtOrAbove.set(ta.value, ta.prob);
+    }
+    const edges = [...probAtOrAbove.keys()].sort((a, b) => a - b);
+
+    // Derived buckets: (-inf, V_1), [V_1, V_2), ..., [V_M, +inf).
+    // prob(bucket) = P(≥lo) - P(≥nextEdge); CDF column then reproduces the raw answer prices.
+    const buckets = [];
+    for (let j = 0; j <= edges.length; j++) {
+        const lo = j === 0 ? -Infinity : edges[j - 1];
+        const hi = j === edges.length ? Infinity : edges[j];  // exclusive upper
+        const pAtLo = j === 0 ? 1 : probAtOrAbove.get(edges[j - 1]);
+        const pAtHi = j === edges.length ? 0 : probAtOrAbove.get(edges[j]);
+        const prob = Math.max(0, pAtLo - pAtHi);  // independent answers can be non-monotone; clamp
+        buckets.push({
+            answerId: `__edge_${j}`,  // synthetic row id (no tradeable answer)
+            answerText: thresholdBucketLabel(lo, hi),
+            prob,
+            pool: null,
+            isOther: false,
+            min: lo === -Infinity ? undefined : lo,
+            max: hi === Infinity ? undefined : hi - 1,
+            lo,
+            sortKey: lo === -Infinity ? -1e9 : lo,
+        });
+    }
+
+    sortAndIndexBuckets(buckets);
+    return { config, market, format: 'thresholds', buckets, thresholdAnswers, otherAnswers };
+}
+
+// Label a derived [lo, hi) interval assuming integer outcomes.
+function thresholdBucketLabel(lo, hi) {
+    if (lo === -Infinity) return `<${hi}`;
+    if (hi === Infinity) return `≥${lo}`;
+    if (hi - lo === 1) return `${lo}`;          // single integer
+    return `${lo}–${hi - 1}`;
+}
+
+function sortAndIndexBuckets(buckets) {
     // Sort: Other to end, otherwise by sortKey then max
     buckets.sort((a, b) => {
         if (a.isOther && !b.isOther) return 1;
@@ -3704,27 +3812,99 @@ function parseNumericMarket(market, config) {
         if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
         return (a.max ?? Infinity) - (b.max ?? Infinity);
     });
-
-    // Index non-Other rows for CDF math
+    // Index non-Other rows for CDF / threshold math
     let i = 0;
     for (const b of buckets) {
         b.indexInTable = b.isOther ? null : i++;
     }
+}
 
-    return { config, market, buckets };
+/**
+ * Compute the canonical payout vector and both holdings columns from current positions.
+ * Mutates each non-Other bucket: b.payout = f[k] ($ if outcome lands in bucket k),
+ * b.threshHold = m[k] = f[k] - f[k-1] (signed ≥-shares; negative = short / NO-side).
+ * "Other" buckets (bucket format only) get b.payout but no threshold value.
+ * Sets state.hasHoldings. Safe to call with no positions (everything zeroes out).
+ */
+function computeNumericPayouts(state) {
+    const pos = state.positions || {};
+    const ordered = state.buckets.filter(b => !b.isOther);  // ascending, indexInTable 0..N-1
+    const others = state.buckets.filter(b => b.isOther);
+    const N = ordered.length;
+    const f = new Array(N).fill(0);
+    let hasHoldings = false;
+
+    const shares = (answerId) => {
+        const p = pos[answerId];
+        if (!p) return null;
+        const yes = p.YES || 0, no = p.NO || 0;
+        if (Math.abs(yes) < 1e-9 && Math.abs(no) < 1e-9) return null;
+        return { yes, no };
+    };
+
+    if (state.format === 'thresholds') {
+        // f[k] = sum over threshold answers of (lo_k >= value ? YES : NO).
+        for (let k = 0; k < N; k++) {
+            for (const ta of state.thresholdAnswers) {
+                const s = shares(ta.answerId);
+                if (!s) continue;
+                hasHoldings = true;
+                f[k] += ordered[k].lo >= ta.value ? s.yes : s.no;
+            }
+        }
+        // Other answers can't be placed on the line; surface separately if held.
+        state.otherHoldings = (state.otherAnswers || [])
+            .map(oa => ({ ...oa, shares: shares(oa.answerId) }))
+            .filter(o => o.shares);
+        if (state.otherHoldings.length) hasHoldings = true;
+    } else {
+        // Bucket (sums-to-one): a NO share pays on every OTHER answer, so it contributes
+        // a constant TotalNO to every outcome plus -1 to its own. f[k] = YES_k - NO_k + TotalNO.
+        let totalNO = 0;
+        for (const b of state.buckets) {
+            const s = shares(b.answerId);
+            if (s) { totalNO += s.no; hasHoldings = true; }
+        }
+        for (let k = 0; k < N; k++) {
+            const s = shares(ordered[k].answerId) || { yes: 0, no: 0 };
+            f[k] = s.yes - s.no + totalNO;
+        }
+        for (const ob of others) {
+            const s = shares(ob.answerId) || { yes: 0, no: 0 };
+            ob.payout = s.yes - s.no + totalNO;
+        }
+        state.otherHoldings = [];
+    }
+
+    // Threshold-form holdings: discrete difference of the payout vector.
+    for (let k = 0; k < N; k++) {
+        ordered[k].payout = f[k];
+        ordered[k].threshHold = k === 0 ? f[0] : f[k] - f[k - 1];
+    }
+    state.hasHoldings = hasHoldings;
 }
 
 async function loadNumericMarket(market, config) {
     try {
         const parsed = parseNumericMarket(market, config);
-        numericState = { ...parsed, selected: new Set() };
+        numericState = { ...parsed, selected: new Set(), positions: null };
+
+        // Threshold markets are view + holdings only: buckets are derived intervals,
+        // so there's no single answer to bet a bucket on. Hide the betting UI.
+        const holdingsOnly = numericState.format === 'thresholds';
+        const container = document.getElementById('numeric-container');
+        container.classList.toggle('holdings-only', holdingsOnly);
+
+        // Fetch positions if authenticated (mirrors the matrix view).
+        await fetchNumericPositions(market);
+        computeNumericPayouts(numericState);
 
         displayMarketInfo(market);
         renderNumericTable();
         updatePanelPreviewNumeric();
 
         hideLoading();
-        document.getElementById('numeric-container').classList.remove('hidden');
+        container.classList.remove('hidden');
         marketInfo.classList.remove('hidden');
     } catch (e) {
         console.error('Failed to load numeric market:', e);
@@ -3733,9 +3913,77 @@ async function loadNumericMarket(market, config) {
     }
 }
 
+async function fetchNumericPositions(market) {
+    numericState.positions = null;
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) return;
+    try {
+        if (!currentUserId) {
+            const user = await fetchCurrentUser(apiKey);
+            if (user) currentUserId = user.id;
+        }
+        if (currentUserId) {
+            numericState.positions = await fetchPositions(market.id, currentUserId);
+        }
+    } catch (e) {
+        console.warn('Failed to fetch numeric positions:', e);
+    }
+}
+
+// Format a holdings value for the table. kind 'eq' = bucket payout (M$, always ≥0);
+// kind 'ge' = signed threshold shares (negative = short / NO-side).
+function formatHeld(v, kind) {
+    if (v == null || Math.abs(v) < 0.5) return '<span class="held-zero">·</span>';
+    const n = Math.round(v);
+    if (kind === 'eq') return `<span class="held-pay">M$${n}</span>`;
+    const cls = n > 0 ? 'held-long' : 'held-short';
+    const sign = n > 0 ? '+' : '';  // negatives already carry '-'
+    return `<span class="${cls}">${sign}${n}</span>`;
+}
+
+// Explainer above the table: what the two holdings columns mean, or why they're empty.
+function renderNumericHoldingsNote() {
+    const el = document.getElementById('numeric-holdings-note');
+    if (!el) return;
+    const parts = [];
+
+    if (numericState.format === 'thresholds') {
+        parts.push(
+            `<span class="nhn-structure">Source: independent threshold market (X ≥ value). ` +
+            `Rows below are the derived intervals between thresholds — view &amp; holdings only.</span>`
+        );
+    }
+
+    if (!apiKeyInput.value.trim()) {
+        parts.push(`Add your API key (top of page) to see your holdings in both forms.`);
+    } else if (!numericState.hasHoldings) {
+        parts.push(`No position found in this market.`);
+    } else {
+        parts.push(
+            `<strong>Held =</strong> payout (M$) if the outcome lands in that row. ` +
+            `<strong>Held ≥</strong> the equivalent net shares of the “X ≥ that row” threshold ` +
+            `(<span class="held-long">+long</span> / <span class="held-short">−short</span>). ` +
+            `The two columns are the same position in PDF vs CDF form — equal payout at resolution, ` +
+            `different only in how the AMM priced them.`
+        );
+        const others = numericState.otherHoldings || [];
+        if (others.length) {
+            const list = others.map(o => `${escapeHtml(o.answerText)} (${o.shares.yes ? '+' + Math.round(o.shares.yes) + ' YES' : ''}${o.shares.no ? ' +' + Math.round(o.shares.no) + ' NO' : ''})`).join(', ');
+            parts.push(`<span class="nhn-other">Not placeable on the line: ${list}.</span>`);
+        }
+    }
+
+    el.innerHTML = parts.join('<br>');
+    el.classList.remove('hidden');
+}
+
 function renderNumericTable() {
     if (!numericState) return;
     const { buckets } = numericState;
+
+    const container = document.getElementById('numeric-container');
+    container.classList.toggle('has-holdings', !!numericState.hasHoldings);
+    renderNumericHoldingsNote();
 
     const tbody = document.getElementById('numeric-rows');
     tbody.innerHTML = '';
@@ -3771,7 +4019,9 @@ function renderNumericTable() {
             <td class="num-cell-label">${escapeHtml(b.answerText)}</td>
             <td class="num-cell-bar"><div class="num-pdf-bar" style="width: ${barWidthPct}%"></div></td>
             <td class="num-cell-pdf">${formatProb(b.prob)}</td>
+            <td class="num-cell-held num-cell-held-eq">${formatHeld(b.payout, 'eq')}</td>
             <td class="num-cell-cdf">${formatProb(cdf[i])}</td>
+            <td class="num-cell-held num-cell-held-ge">${formatHeld(b.threshHold, 'ge')}</td>
             <td class="num-cell-select">
                 <input type="checkbox" data-answer-id="${b.answerId}" ${isSelected ? 'checked' : ''}>
             </td>
@@ -3825,6 +4075,7 @@ function renderNumericTable() {
                     <span class="num-cell-label">${escapeHtml(b.answerText)}</span>
                     <span></span>
                     <span class="num-cell-pdf">${formatProb(b.prob)}</span>
+                    <span class="num-cell-held num-cell-held-eq">${formatHeld(b.payout, 'eq')}</span>
                     <span class="num-cell-select">
                         <input type="checkbox" data-answer-id="${b.answerId}" ${isSelected ? 'checked' : ''}>
                     </span>
@@ -3855,6 +4106,7 @@ function escapeHtml(s) {
 
 function toggleSelection(answerId, force) {
     if (!numericState) return;
+    if (numericState.format === 'thresholds') return;  // view + holdings only
     const has = numericState.selected.has(answerId);
     const want = (force === undefined) ? !has : !!force;
     if (want === has) return;
@@ -4196,6 +4448,7 @@ document.addEventListener('DOMContentLoaded', wireNumericPanelEvents);
 // =============================================================================
 
 let numericConfigFetchedMarket = null;
+let numericConfigFormat = 'buckets';  // detected from the fetched market
 
 function openNumericConfigDialog() {
     const dialog = document.getElementById('numeric-config-dialog');
@@ -4234,12 +4487,14 @@ async function fetchMarketForNumericConfig() {
 
     try {
         const market = await fetchMarket(slug);
-        if (market.mechanism !== 'cpmm-multi-1' || !market.shouldAnswersSumToOne) {
-            throw new Error('Need a linked multi-choice market (sums to one).');
+        if (market.mechanism !== 'cpmm-multi-1') {
+            throw new Error('Need a multi-choice (cpmm-multi-1) market.');
         }
         if (market.isResolved) {
             throw new Error('Market is resolved. Choose an active market.');
         }
+        // Linked (sums-to-one) → bucket format; independent → threshold format.
+        numericConfigFormat = market.shouldAnswersSumToOne ? 'buckets' : 'thresholds';
         numericConfigFetchedMarket = market;
         showNumericConfigMappingStep(market);
     } catch (e) {
@@ -4251,35 +4506,61 @@ async function fetchMarketForNumericConfig() {
     }
 }
 
+// Grab the first number in an answer label, e.g. "215+", "≥215", "at least 215" → 215.
+function parseLeadingNumber(text) {
+    const m = String(text).match(/-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+}
+
 function showNumericConfigMappingStep(market) {
     document.getElementById('numeric-config-market-title').textContent = market.question;
     document.getElementById('numeric-config-name').value = market.question.length > 40
         ? market.question.substring(0, 40) + '…' : market.question;
 
+    const help = document.getElementById('numeric-config-map-help');
+    help.innerHTML = numericConfigFormat === 'thresholds'
+        ? `Independent threshold market. Set the <strong>value</strong> for each “X ≥ value” answer ` +
+          `(auto-filled from the label). Mark “Other” for any non-threshold answer. View &amp; holdings only — no betting.`
+        : `Assign each answer a numeric range. Use blank for an open tail (≤max or ≥min). ` +
+          `Mark “Other” if it's a non-numeric catch-all.`;
+
     const list = document.getElementById('numeric-config-answer-list');
     list.innerHTML = '';
 
     market.answers.forEach((answer, idx) => {
-        // Pre-fill: try to parse as a single int (most common case)
         const trimmed = answer.text.trim();
-        const asInt = parseInt(trimmed, 10);
-        const isSimpleInt = !isNaN(asInt) && String(asInt) === trimmed;
-        // Detect "Other" by name
-        const looksLikeOther = /^other$/i.test(trimmed);
-
+        const looksLikeOther = /^other$/i.test(trimmed) || !!answer.isOther;
         const row = document.createElement('div');
         row.className = 'numeric-config-answer-row';
-        row.innerHTML = `
-            <span class="answer-text" title="${escapeHtml(answer.text)}">${escapeHtml(answer.text)}</span>
-            <input type="number" class="num-cfg-min" placeholder="min" data-idx="${idx}"
-                   value="${isSimpleInt ? asInt : ''}">
-            <input type="number" class="num-cfg-max" placeholder="max" data-idx="${idx}"
-                   value="${isSimpleInt ? asInt : ''}">
-            <label class="other-toggle">
-                <input type="checkbox" class="num-cfg-other" data-idx="${idx}" ${looksLikeOther ? 'checked' : ''}>
-                Other
-            </label>
-        `;
+
+        if (numericConfigFormat === 'thresholds') {
+            row.className = 'numeric-config-answer-row threshold-row';
+            const val = parseLeadingNumber(trimmed);
+            row.innerHTML = `
+                <span class="answer-text" title="${escapeHtml(answer.text)}">${escapeHtml(answer.text)}</span>
+                <span class="cfg-ge-prefix">X ≥</span>
+                <input type="number" class="num-cfg-value" placeholder="value" data-idx="${idx}"
+                       value="${val != null && !looksLikeOther ? val : ''}">
+                <label class="other-toggle">
+                    <input type="checkbox" class="num-cfg-other" data-idx="${idx}" ${looksLikeOther ? 'checked' : ''}>
+                    Other
+                </label>
+            `;
+        } else {
+            const asInt = parseInt(trimmed, 10);
+            const isSimpleInt = !isNaN(asInt) && String(asInt) === trimmed;
+            row.innerHTML = `
+                <span class="answer-text" title="${escapeHtml(answer.text)}">${escapeHtml(answer.text)}</span>
+                <input type="number" class="num-cfg-min" placeholder="min" data-idx="${idx}"
+                       value="${isSimpleInt ? asInt : ''}">
+                <input type="number" class="num-cfg-max" placeholder="max" data-idx="${idx}"
+                       value="${isSimpleInt ? asInt : ''}">
+                <label class="other-toggle">
+                    <input type="checkbox" class="num-cfg-other" data-idx="${idx}" ${looksLikeOther ? 'checked' : ''}>
+                    Other
+                </label>
+            `;
+        }
         list.appendChild(row);
     });
 
@@ -4304,7 +4585,24 @@ function validateNumericConfigMapping() {
 
     const otherChecks = document.querySelectorAll('.num-cfg-other');
     let assignedCount = 0;
-    if (!error) {
+    if (!error && numericConfigFormat === 'thresholds') {
+        const seen = new Set();
+        otherChecks.forEach((cb, i) => {
+            if (cb.checked) return;
+            const v = document.querySelector(`.num-cfg-value[data-idx="${i}"]`).value;
+            if (v === '') {
+                if (!error) error = `Row ${i + 1}: set a threshold value, or check "Other".`;
+                return;
+            }
+            if (seen.has(v)) {
+                if (!error) error = `Row ${i + 1}: duplicate threshold value ${v}.`;
+                return;
+            }
+            seen.add(v);
+            assignedCount++;
+        });
+        if (!error && assignedCount === 0) error = 'Assign at least one threshold.';
+    } else if (!error) {
         otherChecks.forEach((cb, i) => {
             const isOther = cb.checked;
             const min = document.querySelector(`.num-cfg-min[data-idx="${i}"]`).value;
@@ -4320,9 +4618,8 @@ function validateNumericConfigMapping() {
             }
             assignedCount++;
         });
+        if (!error && assignedCount === 0) error = 'Assign at least one bucket.';
     }
-
-    if (!error && assignedCount === 0) error = 'Assign at least one bucket.';
 
     if (error) {
         errorDiv.textContent = error;
@@ -4340,28 +4637,49 @@ function saveNumericConfigAndLoad() {
     const name = document.getElementById('numeric-config-name').value.trim();
     const valueLabel = document.getElementById('numeric-config-value-label').value.trim();
 
-    const buckets = [];
-    market.answers.forEach((answer, i) => {
-        const isOther = document.querySelector(`.num-cfg-other[data-idx="${i}"]`).checked;
-        if (isOther) {
-            buckets.push({ answerText: answer.text, isOther: true });
-            return;
-        }
-        const minVal = document.querySelector(`.num-cfg-min[data-idx="${i}"]`).value;
-        const maxVal = document.querySelector(`.num-cfg-max[data-idx="${i}"]`).value;
-        const spec = { answerText: answer.text };
-        if (minVal !== '') spec.min = parseFloat(minVal);
-        if (maxVal !== '') spec.max = parseFloat(maxVal);
-        buckets.push(spec);
-    });
-
-    const config = {
-        name,
-        slug: market.slug,
-        type: 'numeric',
-        valueLabel: valueLabel || undefined,
-        buckets,
-    };
+    let config;
+    if (numericConfigFormat === 'thresholds') {
+        const thresholds = [];
+        market.answers.forEach((answer, i) => {
+            const isOther = document.querySelector(`.num-cfg-other[data-idx="${i}"]`).checked;
+            if (isOther) {
+                thresholds.push({ answerText: answer.text, isOther: true });
+                return;
+            }
+            const v = document.querySelector(`.num-cfg-value[data-idx="${i}"]`).value;
+            thresholds.push({ answerText: answer.text, value: parseFloat(v) });
+        });
+        config = {
+            name,
+            slug: market.slug,
+            type: 'numeric',
+            format: 'thresholds',
+            valueLabel: valueLabel || undefined,
+            thresholds,
+        };
+    } else {
+        const buckets = [];
+        market.answers.forEach((answer, i) => {
+            const isOther = document.querySelector(`.num-cfg-other[data-idx="${i}"]`).checked;
+            if (isOther) {
+                buckets.push({ answerText: answer.text, isOther: true });
+                return;
+            }
+            const minVal = document.querySelector(`.num-cfg-min[data-idx="${i}"]`).value;
+            const maxVal = document.querySelector(`.num-cfg-max[data-idx="${i}"]`).value;
+            const spec = { answerText: answer.text };
+            if (minVal !== '') spec.min = parseFloat(minVal);
+            if (maxVal !== '') spec.max = parseFloat(maxVal);
+            buckets.push(spec);
+        });
+        config = {
+            name,
+            slug: market.slug,
+            type: 'numeric',
+            valueLabel: valueLabel || undefined,
+            buckets,
+        };
+    }
 
     saveCustomMarket(config);
     closeNumericConfigDialog();

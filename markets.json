@@ -254,5 +254,22 @@
       { "answerText": "15", "min": 15, "max": 15 },
       { "answerText": "\u226516", "min": 16 }
     ]
+  },
+  {
+    "name": "Dem House Seats 2026 (thresholds)",
+    "slug": "how-many-house-seats-will-the-democ",
+    "type": "numeric",
+    "format": "thresholds",
+    "valueLabel": "House seats",
+    "thresholds": [
+      { "answerText": "194+ (2016 result)", "value": 194 },
+      { "answerText": "213+ (2022 result)", "value": 213 },
+      { "answerText": "215+ (2024 result)", "value": 215 },
+      { "answerText": "218+ (majority)", "value": 218 },
+      { "answerText": "222+ (2020 result)", "value": 222 },
+      { "answerText": "235+ (2018 result)", "value": 235 },
+      { "answerText": "246+", "value": 246 },
+      { "answerText": "257+ (2008 result)", "value": 257 }
+    ]
   }
 ]
