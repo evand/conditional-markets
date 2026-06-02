@@ -271,5 +271,139 @@
       { "answerText": "246+", "value": 246 },
       { "answerText": "257+ (2008 result)", "value": 257 }
     ]
+  },
+  {
+    "name": "OpenAI+Anthropic+xAI Revenue 2026",
+    "slug": "what-will-openai-anthropic-xais-com-t2zygIOdIZ",
+    "type": "numeric",
+    "valueLabel": "Combined revenue ($B)",
+    "buckets": [
+      { "answerText": "<$40B", "max": 40 },
+      { "answerText": "$40-50B", "min": 40, "max": 50 },
+      { "answerText": "$50-60B", "min": 50, "max": 60 },
+      { "answerText": "$60-70B", "min": 60, "max": 70 },
+      { "answerText": "$70-80B", "min": 70, "max": 80 },
+      { "answerText": "$80-90B", "min": 80, "max": 90 },
+      { "answerText": "$90-100B", "min": 90, "max": 100 },
+      { "answerText": "$100-110B", "min": 100, "max": 110 },
+      { "answerText": "$110-120B", "min": 110, "max": 120 },
+      { "answerText": "$120-130B", "min": 120, "max": 130 },
+      { "answerText": "$130-140B", "min": 130, "max": 140 },
+      { "answerText": "$140-150B", "min": 140, "max": 150 },
+      { "answerText": "$150-160B", "min": 150, "max": 160 },
+      { "answerText": "$160-170B", "min": 160, "max": 170 },
+      { "answerText": "$170-180B", "min": 170, "max": 180 },
+      { "answerText": "$180-190B", "min": 180, "max": 190 },
+      { "answerText": "$190-200B", "min": 190, "max": 200 },
+      { "answerText": "$200-210B", "min": 200, "max": 210 },
+      { "answerText": "$210-220B", "min": 210, "max": 220 },
+      { "answerText": "$220-230B", "min": 220, "max": 230 },
+      { "answerText": "$230-240B", "min": 230, "max": 240 },
+      { "answerText": "$240-250B", "min": 240, "max": 250 },
+      { "answerText": "$250-260B", "min": 250, "max": 260 },
+      { "answerText": "$260-270B", "min": 260, "max": 270 },
+      { "answerText": "$270-280B", "min": 270, "max": 280 },
+      { "answerText": "$280-290B", "min": 280, "max": 290 },
+      { "answerText": "$290-300B", "min": 290, "max": 300 },
+      { "answerText": "Other", "isOther": true }
+    ]
+  },
+  {
+    "name": "patio11 Sabbatical Length",
+    "slug": "how-long-in-months-will-patio11s-sa",
+    "type": "numeric",
+    "valueLabel": "Months",
+    "buckets": [
+      { "answerText": "18-21", "min": 18, "max": 21 },
+      { "answerText": "21-24", "min": 21, "max": 24 },
+      { "answerText": "24-27", "min": 24, "max": 27 },
+      { "answerText": "27-30", "min": 27, "max": 30 },
+      { "answerText": "30-33", "min": 30, "max": 33 },
+      { "answerText": "33-36", "min": 33, "max": 36 },
+      { "answerText": "36-39", "min": 36, "max": 39 },
+      { "answerText": "39-42", "min": 39, "max": 42 },
+      { "answerText": "42-45", "min": 42, "max": 45 },
+      { "answerText": "45-48", "min": 45, "max": 48 },
+      { "answerText": "48-51", "min": 48, "max": 51 },
+      { "answerText": "51-54", "min": 51, "max": 54 },
+      { "answerText": "54-57", "min": 54, "max": 57 },
+      { "answerText": "57-60", "min": 57, "max": 60 },
+      { "answerText": "60-63", "min": 60, "max": 63 }
+    ]
+  },
+  {
+    "name": "Nuclear Risk 2026: # markets YES",
+    "slug": "nuclear-risk-2026-how-many-of-the-6",
+    "type": "numeric",
+    "valueLabel": "Markets resolving YES",
+    "buckets": [
+      { "answerText": "0", "min": 0, "max": 0 },
+      { "answerText": "1", "min": 1, "max": 1 },
+      { "answerText": "2", "min": 2, "max": 2 },
+      { "answerText": "3-4", "min": 3, "max": 4 },
+      { "answerText": "5-6", "min": 5, "max": 6 }
+    ]
+  },
+  {
+    "name": "AGI When? (year)",
+    "slug": "agi-when-resolves-to-the-year-in-wh-d5c5ad8e4708",
+    "type": "numeric",
+    "valueLabel": "Year",
+    "buckets": [
+      { "answerText": "2024-2025", "min": 2024, "max": 2025 },
+      { "answerText": "2025-2026", "min": 2025, "max": 2026 },
+      { "answerText": "2026-2027", "min": 2026, "max": 2027 },
+      { "answerText": "2027-2028", "min": 2027, "max": 2028 },
+      { "answerText": "2028-2029", "min": 2028, "max": 2029 },
+      { "answerText": "2029-2030", "min": 2029, "max": 2030 },
+      { "answerText": "2030-2031", "min": 2030, "max": 2031 },
+      { "answerText": "2031-2032", "min": 2031, "max": 2032 },
+      { "answerText": "2032-2033", "min": 2032, "max": 2033 },
+      { "answerText": "2033-2034", "min": 2033, "max": 2034 },
+      { "answerText": "2034-2035", "min": 2034, "max": 2035 },
+      { "answerText": "2035-2036", "min": 2035, "max": 2036 },
+      { "answerText": "2036-2037", "min": 2036, "max": 2037 },
+      { "answerText": "2037-2038", "min": 2037, "max": 2038 },
+      { "answerText": "2038-2039", "min": 2038, "max": 2039 },
+      { "answerText": "2039-2040", "min": 2039, "max": 2040 },
+      { "answerText": "2040-2041", "min": 2040, "max": 2041 },
+      { "answerText": "2041-2042", "min": 2041, "max": 2042 },
+      { "answerText": "2042-2043", "min": 2042, "max": 2043 },
+      { "answerText": "2043-2044", "min": 2043, "max": 2044 },
+      { "answerText": "2044-2045", "min": 2044, "max": 2045 },
+      { "answerText": "2045-2046", "min": 2045, "max": 2046 },
+      { "answerText": "2046-2047", "min": 2046, "max": 2047 },
+      { "answerText": "2047-2048", "min": 2047, "max": 2048 },
+      { "answerText": "2048-2049", "min": 2048, "max": 2049 },
+      { "answerText": "2049-2050", "min": 2049, "max": 2050 }
+    ]
+  },
+  {
+    "name": "Trump Approval Low 2026",
+    "slug": "how-low-will-trumps-approval-rating",
+    "type": "numeric",
+    "valueLabel": "Approval %",
+    "buckets": [
+      { "answerText": "24% or lower", "max": 24 },
+      { "answerText": "25 - 29%", "min": 25, "max": 29 },
+      { "answerText": "30 - 34%", "min": 30, "max": 34 },
+      { "answerText": "35 - 39%", "min": 35, "max": 39 },
+      { "answerText": "40 - 44%", "min": 40, "max": 44 },
+      { "answerText": "Above 44%", "min": 44 }
+    ]
+  },
+  {
+    "name": "GOP Safe Senate Seats 2026",
+    "slug": "how-many-safe-senate-seats-will-rep",
+    "type": "numeric",
+    "valueLabel": "Safe seats",
+    "buckets": [
+      { "answerText": "0 - 2", "min": 0, "max": 2 },
+      { "answerText": "3 - 5", "min": 3, "max": 5 },
+      { "answerText": "6 - 7", "min": 6, "max": 7 },
+      { "answerText": "8 - 9", "min": 8, "max": 9 },
+      { "answerText": "10", "min": 10, "max": 10 },
+      { "answerText": "11", "min": 11, "max": 11 }
+    ]
   }
 ]
