@@ -84,18 +84,6 @@
     }
   },
   {
-    "name": "Eurovision 2026 Winner",
-    "slug": "will-the-eurovision-2026-winner-be",
-    "labelA": "Public vote",
-    "labelB": "Jury vote",
-    "truthTable": {
-      "a_yes_b_yes": "The winner will have won both the public and the jury votes",
-      "a_yes_b_no": "The winner will have won only the public vote",
-      "a_no_b_yes": "The winner will have won only the jury vote",
-      "a_no_b_no": "The winner will have won neither the public nor the jury votes"
-    }
-  },
-  {
     "name": "Messi / Ronaldo 1000 Goals",
     "slug": "will-messi-and-ronaldo-both-reach-1",
     "labelA": "Messi 1000",
@@ -144,18 +132,6 @@
     }
   },
   {
-    "name": "China Taiwan Invasion / Moon",
-    "slug": "china-invades-taiwan-vs-china-lands",
-    "labelA": "Invades Taiwan",
-    "labelB": "Moon landing",
-    "truthTable": {
-      "a_yes_b_yes": "China invades Taiwan ; China lands on the Moon",
-      "a_yes_b_no": "China invades Taiwan ; China doesn't land on the Moon",
-      "a_no_b_yes": "China doesn't invade Taiwan ; China lands on the Moon",
-      "a_no_b_no": "China doesn't invade Taiwan ; China doesn't land on the Moon"
-    }
-  },
-  {
     "name": "2028 Woman Nominees",
     "slug": "which-major-parties-will-nominate-a",
     "labelA": "Dem woman",
@@ -201,6 +177,30 @@
       "a_yes_b_no": "Democrats win senate ONLY",
       "a_no_b_yes": "Democrats win governor ONLY",
       "a_no_b_no": "Democrats don\u2019t win senate or governor"
+    }
+  },
+  {
+    "name": "Dem 222+ Seats / Trump Impeached",
+    "slug": "will-the-democrats-win-at-least-222",
+    "labelA": "222+ seats",
+    "labelB": "Impeached",
+    "truthTable": {
+      "a_yes_b_yes": ">= 222, Impeached",
+      "a_yes_b_no": ">= 222, Not Impeached",
+      "a_no_b_yes": "< 222, Impeached",
+      "a_no_b_no": "< 222, Not Impeached"
+    }
+  },
+  {
+    "name": "AOC 2028 Nominee / Wins",
+    "slug": "will-aoc-be-the-nominee-and-will-sh",
+    "labelA": "Nominee",
+    "labelB": "Wins",
+    "truthTable": {
+      "a_yes_b_yes": "Is nominee, does win",
+      "a_yes_b_no": "Is nominee, doesn't win",
+      "a_no_b_yes": "Isn't nominee, does win",
+      "a_no_b_no": "Isn't nominee, doesn't win"
     }
   },
   {
